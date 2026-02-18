@@ -1,0 +1,420 @@
+// server/src/server.js
+import "dotenv/config";
+import express from "express";
+import cors from "cors";
+import helmet from "helmet";
+import morgan from "morgan";
+import compression from "compression";
+import http from "http";
+import { Server as SocketIOServer } from "socket.io";
+import mongoose from "mongoose";
+import path from "node:path";
+import fs from "node:fs";
+
+// Auth
+import { requireAuth, attachAuthUser } from "./middleware/auth.js";
+
+// IAM context builder
+import { buildContextFrom } from "../modules/iam/utils/rbac.util.js";
+
+// Core de notificaciones
+import { makeNotifier } from "./core/notify.js";
+import notificationsRoutes from "./core/notifications.routes.js";
+
+// Módulo Rondas QR
+import rondasqr from "../modules/rondasqr/index.js";
+import rondasReportsRoutes from "../modules/rondasqr/routes/rondasqr.reports.routes.js";
+import rondasOfflineRoutes from "../modules/rondasqr/routes/rondasqr.offline.routes.js";
+
+// Evaluaciones / Incidentes / Acceso / Visitas
+import evaluacionesRoutes from "./routes/evaluaciones.routes.js";
+import incidentesRoutes from "../modules/incidentes/routes/incident.routes.js";
+import accesoRoutes from "../modules/controldeacceso/routes/acceso.routes.js";
+import uploadRoutes from "../modules/controldeacceso/routes/upload.routes.js";
+import visitasRoutes from "../modules/visitas/visitas.routes.js";
+
+// ✅ Chat
+import chatRoutes from "./routes/chat.routes.js";
+
+// Cron
+import { startDailyAssignmentCron } from "./cron/assignments.cron.js";
+
+// ✅ IAM
+import { registerIAMModule } from "../modules/iam/index.js";
+
+const app = express();
+app.set("trust proxy", 1);
+
+/* ───────────────────── ENV / MODOS ───────────────────── */
+
+const IS_PROD = process.env.NODE_ENV === "production";
+const DISABLE_AUTH = String(process.env.DISABLE_AUTH || "0") === "1";
+
+/**
+ * DEV_OPEN = 1 abre todo (bypass de permisos) en DEV.
+ * Si no lo defines, DISABLE_AUTH=1 también activa modo "abierto" por compatibilidad.
+ */
+const DEV_OPEN = String(process.env.DEV_OPEN || (DISABLE_AUTH ? "1" : "0")) === "1";
+
+console.log("[env] NODE_ENV:", process.env.NODE_ENV);
+console.log("[env] DISABLE_AUTH:", DISABLE_AUTH ? "1" : "0");
+console.log("[env] DEV_OPEN:", DEV_OPEN ? "1" : "0");
+
+/* ───────────────────────────── CORS ───────────────────────────── */
+
+function parseOrigins(str) {
+  if (!str) return null;
+  return String(str)
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+const devDefaults = ["http://localhost:5173", "http://localhost:3000"];
+const origins =
+  parseOrigins(process.env.CORS_ORIGINS || process.env.CORS_ORIGIN) ||
+  (!IS_PROD ? devDefaults : null);
+
+app.use(
+  cors({
+    origin: origins || true,
+    credentials: true,
+  })
+);
+
+/* ─────────────────────── Helmet / Seguridad ───────────────────── */
+
+app.use(
+  helmet({
+    crossOriginResourcePolicy: false,
+  })
+);
+
+if (!IS_PROD) app.use(morgan("dev"));
+app.use(compression());
+
+/* ─────────────────────── Parsers de body ──────────────────────── */
+app.use(express.json({ limit: "30mb" }));
+app.use(express.urlencoded({ extended: true, limit: "30mb" }));
+
+if (!IS_PROD) {
+  app.use((req, res, next) => {
+    res.set("Cache-Control", "no-store");
+    next();
+  });
+}
+
+/* ─────────────────────── DEV IDENTITY GLOBAL ─────────────────────
+   En dev abierto, permite inyectar email para simular sesión.
+   OJO: en producción NO se acepta esto como autoridad.
+*/
+function devIdentity(req, _res, next) {
+  if (IS_PROD) return next();
+  if (!(DEV_OPEN || DISABLE_AUTH)) return next();
+
+  const email = (
+    req.header("x-user-email") ||
+    process.env.SUPERADMIN_EMAIL ||
+    "dev@local"
+  )
+    .toLowerCase()
+    .trim();
+
+  // Solo identidad (como si viniera del JWT)
+  req.authUser = {
+    sub: "dev|local",
+    email,
+    name: "DEV USER",
+  };
+
+  // Simula payload para compatibilidad con tooling
+  req.auth = req.auth || {};
+  req.auth.payload = {
+    sub: req.authUser.sub,
+    email: req.authUser.email,
+    name: req.authUser.name,
+  };
+
+  return next();
+}
+
+app.use(devIdentity);
+
+/* ─────────────────────── Estáticos / Uploads ──────────────────── */
+
+const UPLOADS_ROOT = path.resolve(process.cwd(), "uploads");
+if (!fs.existsSync(UPLOADS_ROOT)) {
+  fs.mkdirSync(UPLOADS_ROOT, { recursive: true });
+}
+
+app.use("/uploads", express.static(UPLOADS_ROOT));
+app.use("/api/uploads", express.static(UPLOADS_ROOT));
+
+/* ───────────────────────── Health checks ──────────────────────── */
+
+app.get("/api/health", (_req, res) =>
+  res.json({
+    ok: true,
+    service: "senaf-api",
+    ts: Date.now(),
+    env: process.env.NODE_ENV,
+    devOpen: DEV_OPEN,
+    disableAuth: DISABLE_AUTH,
+  })
+);
+app.get("/health", (_req, res) => res.json({ ok: true }));
+
+/* ───────────────────── HTTP + Socket.IO bind ──────────────────── */
+
+const server = http.createServer(app);
+
+const io = new SocketIOServer(server, {
+  path: "/socket.io",
+  cors: {
+    origin: origins || true,
+    methods: ["GET", "POST"],
+    credentials: true,
+  },
+});
+
+app.set("io", io);
+app.use((req, _res, next) => {
+  req.io = io;
+  next();
+});
+
+/* ─────────────────────────── MongoDB ──────────────────────────── */
+
+const mongoUri = process.env.MONGODB_URI || process.env.MONGO_URI;
+if (!mongoUri) {
+  console.error("[db] FALTA MONGODB_URI o MONGO_URI");
+  process.exit(1);
+}
+
+await mongoose.connect(mongoUri, { autoIndex: true }).catch((e) => {
+  console.error("[db] Error conectando a MongoDB:", e?.message || e);
+  process.exit(1);
+});
+
+console.log("[db] MongoDB conectado");
+
+/* ─────────────────── Auth opcional (GLOBAL) ────────────────────
+   - Si llega Authorization Bearer y DISABLE_AUTH != 1 -> valida JWT
+   - Si no hay Authorization -> sigue como visitante
+*/
+function optionalAuth(req, res, next) {
+  if (DISABLE_AUTH) return next();
+
+  const h = String(req.headers.authorization || "");
+  if (h.toLowerCase().startsWith("bearer ")) {
+    return requireAuth(req, res, next);
+  }
+  return next();
+}
+
+app.use(optionalAuth);
+
+/**
+ * 1) Normaliza usuario desde JWT -> req.user (y/o req.authUser si tu attach lo hace)
+ */
+app.use(attachAuthUser);
+
+/**
+ * 2) Construye contexto IAM en req.iam
+ * - Si el usuario NO existe en IAM => visitor
+ * - Si no hay email => no crea contexto
+ */
+app.use(async (req, _res, next) => {
+  try {
+    const email =
+      req?.auth?.payload?.email ||
+      req?.authUser?.email ||
+      req?.user?.email ||
+      req.headers["x-user-email"] ||
+      null;
+
+    if (!email) return next();
+
+    req.iam = await buildContextFrom(req);
+    return next();
+  } catch (e) {
+    return next(e);
+  }
+});
+
+/* ───────────────────── ✅ IAM MODULE REGISTER ✅ ───────────────────── */
+await registerIAMModule({ app, basePath: "/api/iam/v1", enableDoAlias: true });
+
+/* ─────────────────── Notificaciones globales ──────────────────── */
+
+const notifier = makeNotifier({ io, mailer: null });
+app.set("notifier", notifier);
+app.use("/api/notifications", notificationsRoutes);
+app.use("/notifications", notificationsRoutes);
+
+startDailyAssignmentCron(app);
+
+/* ──────────────── DEBUG: trigger por URL ─────────────── */
+
+app.get("/api/_debug/ping-assign", (req, res) => {
+  const userId = String(req.query.userId || "dev|local");
+  const title = String(req.query.title || "Nueva ronda asignada (prueba)");
+  const body = String(
+    req.query.body || "Debes comenzar la ronda de prueba en el punto A."
+  );
+
+  io.to(`user-${userId}`).emit("rondasqr:nueva-asignacion", {
+    title,
+    body,
+    meta: { debug: true, ts: Date.now() },
+  });
+
+  io.to(`guard-${userId}`).emit("rondasqr:nueva-asignacion", {
+    title,
+    body,
+    meta: { debug: true, ts: Date.now() },
+  });
+
+  res.json({ ok: true, sentTo: [`user-${userId}`, `guard-${userId}`] });
+});
+
+/* ───────────────────── ✅ CHAT REAL (API) ✅ ───────────────────── */
+app.use("/api/chat", chatRoutes);
+app.use("/chat", chatRoutes);
+
+/* ────────────────────── Rondas QR (v1) ─────────────────────── */
+
+const pingHandler = (_req, res) =>
+  res.json({ ok: true, where: "/rondasqr/v1/ping" });
+const pingCheckinHandler = (_req, res) =>
+  res.json({ ok: true, where: "/rondasqr/v1/checkin/ping" });
+
+// Con /api
+app.get("/api/rondasqr/v1/ping", pingHandler);
+app.get("/api/rondasqr/v1/checkin/ping", pingCheckinHandler);
+app.use("/api/rondasqr/v1", rondasqr);
+app.use("/api/rondasqr/v1", rondasReportsRoutes);
+app.use("/api/rondasqr/v1", rondasOfflineRoutes);
+
+// Sin /api
+app.get("/rondasqr/v1/ping", pingHandler);
+app.get("/rondasqr/v1/checkin/ping", pingCheckinHandler);
+app.use("/rondasqr/v1", rondasqr);
+app.use("/rondasqr/v1", rondasReportsRoutes);
+app.use("/rondasqr/v1", rondasOfflineRoutes);
+
+/* ───────────────── Control de Acceso ───────────────── */
+
+app.use("/api/acceso", accesoRoutes);
+app.use("/acceso", accesoRoutes);
+
+app.use("/api/acceso/uploads", uploadRoutes);
+app.use("/acceso/uploads", uploadRoutes);
+
+/* ───────────────── VISITAS ───────────────── */
+
+app.use("/api", visitasRoutes);
+app.use("/", visitasRoutes);
+
+/* ───────────────── INCIDENTES ─────────────────
+   ✅ Endpoint principal:
+      GET  /api/incidentes?limit=500
+      POST /api/incidentes
+      PUT  /api/incidentes/:id
+
+   ✅ Aliases por compatibilidad (si tu app vieja los usa):
+      /incidentes
+      /api/rondasqr/v1/incidentes
+      /rondasqr/v1/incidentes
+*/
+app.use("/api/incidentes", incidentesRoutes);
+app.use("/incidentes", incidentesRoutes);
+
+// Alias compatibles con rutas históricas (evita meter paths absolutos dentro del router)
+app.use("/api/rondasqr/v1/incidentes", incidentesRoutes);
+app.use("/rondasqr/v1/incidentes", incidentesRoutes);
+
+/* ───────────────── Evaluaciones ───────────────── */
+
+if (!IS_PROD) {
+  app.use("/api/evaluaciones", (req, _res, next) => {
+    if (req.method === "POST") {
+      console.log("[debug] POST /api/evaluaciones body:", req.body);
+    }
+    next();
+  });
+}
+
+app.use("/evaluaciones", evaluacionesRoutes);
+app.use("/api/evaluaciones", evaluacionesRoutes);
+
+/* ────────────────────── Error handler (500) ───────────────────── */
+
+app.use((err, _req, res, _next) => {
+  console.error("[api] error:", err?.stack || err?.message || err);
+  res.status(err.status || 500).json({
+    ok: false,
+    error: err?.message || "Internal Server Error",
+  });
+});
+
+/* ─────────────────────────── 404 final ────────────────────────── */
+app.use((_req, res) =>
+  res.status(404).json({ ok: false, error: "Not implemented" })
+);
+
+/* ─────────────────────── Start / Shutdown ─────────────────────── */
+
+const PORT = Number(process.env.PORT || 8080);
+server.listen(PORT, "0.0.0.0", () => {
+  console.log(`[api] http://localhost:${PORT}`);
+  console.log(`[cors] origins: ${origins ? origins.join(", ") : "(allow all)"}`);
+});
+
+/* ───────────────────────── Socket.IO ──────────────────────────── */
+
+io.on("connection", (s) => {
+  console.log("[io] client:", s.id);
+  s.emit("hello", { ok: true, ts: Date.now() });
+
+  const joinRooms = (userId) => {
+    if (!userId) return;
+    s.join(`user-${userId}`);
+    s.join(`guard-${userId}`);
+    console.log(`[io] ${s.id} joined rooms user-${userId} & guard-${userId}`);
+  };
+
+  s.on("join-room", ({ userId }) => joinRooms(userId));
+  s.on("join", ({ userId }) => joinRooms(userId));
+
+  s.on("chat:join", ({ room = "global" } = {}) => {
+    s.join(`chat:${room}`);
+    s.emit("chat:joined", { room });
+  });
+
+  s.on("chat:leave", ({ room = "global" } = {}) => {
+    s.leave(`chat:${room}`);
+    s.emit("chat:left", { room });
+  });
+
+  s.on("disconnect", () => console.log("[io] bye:", s.id));
+});
+
+function shutdown(sig) {
+  console.log(`[api] ${sig} recibido. Cerrando...`);
+  server.close(() => {
+    mongoose.connection.close(false).then(() => {
+      console.log("[api] cerrado.");
+      process.exit(0);
+    });
+  });
+}
+
+process.on("SIGINT", () => shutdown("SIGINT"));
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("unhandledRejection", (err) =>
+  console.error("[api] UnhandledRejection:", err)
+);
+process.on("uncaughtException", (err) =>
+  console.error("[api] UncaughtException:", err)
+);
