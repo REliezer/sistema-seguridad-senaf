@@ -11,7 +11,7 @@
     "seed": "node src/scripts/seed.js",
     "seed:reset": "cross-env SEED_RESET=1 node src/scripts/seed.js",
     "start": "node src/server.js",
-    "start:prod": "cross-env NODE_ENV=production node src/server.js",
+    "start:prod": "cross-env NODE_ENV=production DOTENV_CONFIG_PATH=.env.prod node src/server.js",
     "lint": "node -e \"console.log('add eslint if desired')\""
   },
   "dependencies": {
@@ -27,7 +27,6 @@
     "express": "^4.21.2",
     "express-async-errors": "3.1.1",
     "express-fileupload": "^1.5.2",
-    "express-oauth2-jwt-bearer": "1.6.0",
     "express-rate-limit": "7.4.0",
     "express-validator": "^7.2.1",
     "helmet": "^7.2.0",
@@ -35,7 +34,6 @@
     "jsonwebtoken": "^9.0.2",
     "jspdf": "^3.0.3",
     "jspdf-autotable": "^5.0.2",
-    "jwks-rsa": "^3.2.0",
     "mongodb": "^6.20.0",
     "mongoose": "^8.19.2",
     "morgan": "^1.10.1",

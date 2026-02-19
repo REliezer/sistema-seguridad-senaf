@@ -4,7 +4,7 @@ import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import App from "./App.jsx";
 import "./styles.css";
-import Auth0ProviderWithHistory from "./auth/auth0-provider-with-history.jsx";
+import { LocalAuthProvider } from "./auth/local-auth-react.jsx";
 
 /**
  * Presets globales UI
@@ -23,9 +23,9 @@ import Auth0ProviderWithHistory from "./auth/auth0-provider-with-history.jsx";
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
     <BrowserRouter>
-      <Auth0ProviderWithHistory>
+      <LocalAuthProvider>
         <App />
-      </Auth0ProviderWithHistory>
+      </LocalAuthProvider>
     </BrowserRouter>
   </React.StrictMode>
 );

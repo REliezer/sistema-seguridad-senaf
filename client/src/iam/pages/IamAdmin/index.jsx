@@ -1,7 +1,7 @@
 // src/iam/pages/IamAdmin/index.jsx
 import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
-import { useAuth0 } from "@auth0/auth0-react";
+import { useAuth0 } from "../../../auth/local-auth-react.jsx";
 
 import IamGuard from "../../api/IamGuard.jsx";
 
@@ -13,8 +13,6 @@ import AuditPage from "./AuditPage.jsx";
 
 import { iamApi } from "../../api/iamApi.js";
 import { permisosKeys, rolesKeys } from "../../catalog/perms.js";
-
-const AUTH_AUDIENCE = import.meta.env.VITE_AUTH0_AUDIENCE;
 
 /* =========================
    Helpers normalización
@@ -176,12 +174,7 @@ export default function IamAdmin() {
   const getToken = useCallback(async () => {
     if (!isAuthenticated) return null;
     try {
-      const token = await getAccessTokenSilently({
-        authorizationParams: {
-          audience: AUTH_AUDIENCE || undefined,
-          scope: "openid profile email",
-        },
-      });
+      const token = await getAccessTokenSilently();
       return token || null;
     } catch (e) {
       console.warn("[IamAdmin] no se pudo obtener token:", e?.message || e);

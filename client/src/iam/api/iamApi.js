@@ -14,8 +14,8 @@ const IS_PROD = VITE_ENV === "production";
 
 /* ─────────── provider de token tipo attachAuth0 ─────────── */
 let tokenProvider = null;
-export function attachIamAuth(fn) {
-  tokenProvider = fn; // fn es async () => token | null
+export function attachIamAuth(provider) {
+  tokenProvider = typeof provider === "function" ? provider : null;
 }
 
 /** Identidad DEV (para cabeceras x-user-*) */

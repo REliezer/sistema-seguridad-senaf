@@ -1,4 +1,3 @@
-// server/modules/iam/utils/rbac.util.js
 import IamUser from "../models/IamUser.model.js";
 import IamRole from "../models/IamRole.model.js";
 
@@ -21,8 +20,8 @@ function getJwtPayload(req) {
   return req?.auth?.payload || null; // express-oauth2-jwt-bearer
 }
 
-function getAuth0Sub(payload) {
-  const sub = payload?.sub;
+function getExternalIdFromPayload(payload) {
+  const sub = payload?.sub || payload?.externalId;
   return sub ? String(sub).trim() : null;
 }
 
@@ -51,7 +50,7 @@ export async function buildContextFrom(req) {
   const payload = getJwtPayload(req);
 
   // Identidad desde JWT (Auth0)
-  const auth0Sub = getAuth0Sub(payload);
+  const externalId = getExternalIdFromPayload(payload);
   const jwtEmail = getEmailFromPayload(payload);
 
   // Identidad desde headers dev (solo si permites, y solo en no-prod)
@@ -67,14 +66,11 @@ export async function buildContextFrom(req) {
   const headerRoles = allowDevHeaders ? parseList(req?.headers?.["x-roles"]) : [];
   const headerPerms = allowDevHeaders ? parseList(req?.headers?.["x-perms"]) : [];
 
-  // Usuario en BD:
-  // 1) Primero por auth0Sub (si lo tienes en tu modelo)
-  // 2) Si no existe, fallback por email
   let user = null;
 
-  if (auth0Sub) {
+  if (externalId) {
     try {
-      user = await IamUser.findOne({ auth0Sub }).lean();
+      user = await IamUser.findOne({ externalId }).lean();
     } catch {
       // si el campo no existe aún, no rompas
       user = null;
@@ -131,7 +127,6 @@ export async function buildContextFrom(req) {
   return {
     user, // puede ser null
     email, // puede ser null si token no trae email
-    auth0Sub, // ✅ clave real de Auth0
     roles: [...roleNames],
     permissions: [...permSet],
     has,
@@ -170,7 +165,6 @@ export function requirePerm(perm) {
           message: "forbidden",
           need: perm,
           email: ctx.email,
-          auth0Sub: ctx.auth0Sub,
           roles: ctx.roles,
           perms: ctx.permissions,
           visitor: ctx.isVisitor,
@@ -178,6 +172,35 @@ export function requirePerm(perm) {
       }
 
       next();
+    } catch (e) {
+      next(e);
+    }
+  };
+}
+
+export function requireAnyPerm(perms = []) {
+  const required = Array.isArray(perms) ? perms.filter(Boolean) : [];
+  return async (req, res, next) => {
+    try {
+      const ctx = await buildContextFrom(req);
+      req.iam = ctx;
+
+      if (!req?.auth?.payload) {
+        return res.status(401).json({ message: "No autenticado" });
+      }
+
+      if (!required.length || required.some((p) => ctx.has(p))) {
+        return next();
+      }
+
+      return res.status(403).json({
+        message: "forbidden",
+        needAnyOf: required,
+        email: ctx.email,
+        roles: ctx.roles,
+        perms: ctx.permissions,
+        visitor: ctx.isVisitor,
+      });
     } catch (e) {
       next(e);
     }

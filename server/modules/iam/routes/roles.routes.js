@@ -2,7 +2,7 @@
 import { Router } from "express";
 import IamRole from "../models/IamRole.model.js";
 import IamPermission from "../models/IamPermission.model.js";
-import { devOr, requirePerm } from "../utils/rbac.util.js";
+import { devOr, requireAnyPerm, requirePerm } from "../utils/rbac.util.js";
 import { writeAudit } from "../utils/audit.util.js";
 
 const r = Router();
@@ -13,7 +13,10 @@ const normCode = (s = "") =>
 // ------------------------------------------------------------------
 // LISTAR ROLES
 // ------------------------------------------------------------------
-r.get("/", devOr(requirePerm("iam.roles.manage")), async (req, res) => {
+r.get(
+  "/",
+  devOr(requireAnyPerm(["iam.roles.manage", "iam.users.manage"])),
+  async (req, res) => {
   try {
     const items = await IamRole.find().sort({ name: 1 }).lean();
     return res.json({ items });
@@ -23,7 +26,8 @@ r.get("/", devOr(requirePerm("iam.roles.manage")), async (req, res) => {
       .status(500)
       .json({ message: "Error interno al listar roles", error: err.message });
   }
-});
+  }
+);
 
 // ------------------------------------------------------------------
 // CREAR ROL

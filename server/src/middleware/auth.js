@@ -1,21 +1,26 @@
-// server/src/middleware/auth.js
-import { auth } from "express-oauth2-jwt-bearer";
-import { env } from "../config/env.js";
+import { verifyAccessToken } from "../../modules/iam/utils/jwt.util.js";
 
-/* Utils */
-function normalizeDomain(d) {
-  if (!d) return "";
-  return String(d)
-    .replace(/^https?:\/\//i, "")
-    .replace(/\/+$/g, "")
-    .trim();
+const DISABLE_AUTH = String(process.env.DISABLE_AUTH || "0") === "1";
+
+/**
+ * Función para parsear el token Bearer del header Authorization. Retorna null si no existe o no es válido.
+ * @param {*} req 
+ * @returns 
+ */
+function parseBearer(req) {
+  const h = String(req.headers.authorization || "");
+  if (!h.toLowerCase().startsWith("bearer ")) return null;
+  return h.slice(7).trim() || null;
 }
 
-function toArr(v) {
-  if (!v) return [];
-  return Array.isArray(v) ? v : [v];
-}
-
+/**
+ * Función para parsear las roles y permisos desde el payload del JWT. Soporta:
+ * - roles: array de roles (ej: ["admin", "user"])
+ * - permissions: array de permisos (ej: ["iam.users.manage"])
+ * - scope: string con permisos separados por espacios (ej: "iam.users.manage iam.roles.manage")
+ * @param {*} p 
+ * @returns 
+ */
 function parsePermissionsFromPayload(p = {}) {
   let perms = Array.isArray(p.permissions) ? p.permissions : [];
   if ((!perms || perms.length === 0) && typeof p.scope === "string") {
@@ -27,73 +32,28 @@ function parsePermissionsFromPayload(p = {}) {
   return Array.from(new Set(perms));
 }
 
-/* Env Auth0 */
-const domain = normalizeDomain(env?.auth0?.domain || process.env.AUTH0_DOMAIN);
-const audience = env?.auth0?.audience || process.env.AUTH0_AUDIENCE;
-const issuerBaseURL =
-  env?.auth0?.issuerBaseURL ||
-  process.env.AUTH0_ISSUER_BASE_URL ||
-  (domain ? `https://${domain}` : undefined);
-
-const IS_PROD = process.env.NODE_ENV === "production";
-const DISABLE_AUTH = String(process.env.DISABLE_AUTH || "0") === "1";
-
 /**
- * Middleware "real" de JWT.
- * - DISABLE_AUTH=1 => passthrough
- * - Si falta issuer/audience:
- *    - PROD => 500 (config incorrecta)
- *    - DEV  => passthrough (para no romper desarrollo)
+ * Función para convertir un valor a array. Si ya es un array, lo retorna. Si es un string, lo convierte en array de un elemento. Si es falsy, retorna array vacío.
+ * @param {*} v 
+ * @returns 
  */
-const realJwt =
-  !issuerBaseURL || !audience
-    ? (req, res, next) => {
-        if (DISABLE_AUTH) return next();
-
-        const msg =
-          "[AUTH] Config incompleta: falta AUTH0_AUDIENCE o AUTH0_ISSUER_BASE_URL (o env.auth0.*).";
-        if (IS_PROD) return res.status(500).json({ ok: false, error: msg });
-        console.warn(msg, { issuerBaseURL, audience });
-        return next();
-      }
-    : auth({
-        issuerBaseURL,
-        audience,
-        tokenSigningAlg: "RS256",
-      });
-
-/* JWT Validator */
-export const requireAuth = DISABLE_AUTH ? (_req, _res, next) => next() : realJwt;
-
-// alias útil (si en algún lado usas checkJwt)
-export { requireAuth as checkJwt };
-
-/**
- * ✅ Optional auth:
- * - Si NO hay Authorization Bearer => deja pasar (visitor)
- * - Si hay Bearer => valida (o bypass si DISABLE_AUTH=1)
- */
-export function optionalAuth(req, res, next) {
-  if (DISABLE_AUTH) return next();
-  const h = String(req.headers.authorization || "");
-  if (!h.toLowerCase().startsWith("bearer ")) return next();
-  return requireAuth(req, res, next);
+function toArr(v) {
+  if (!v) return [];
+  return Array.isArray(v) ? v : [v];
 }
 
-/* Normalizador desde payload */
+/**
+ * Función para construir un objeto de usuario a partir del payload del JWT. Extrae sub, email, name, roles y permissions.
+ * - sub: se mapea a externalId (legacy Auth0) o se toma directamente del payload
+ * - email: se toma del campo email o de un claim personalizado (ej: https://senaf/email)
+ * - name: se toma del campo name
+ * - roles: se normaliza a array de strings
+ * - permissions: se parsea con parsePermissionsFromPayload
+ * @param {*} p 
+ * @returns 
+ */
 export function getUserFromPayload(p = {}) {
-  const NS =
-    process.env.IAM_ROLES_NAMESPACE ||
-    process.env.AUTH0_NAMESPACE ||
-    "https://senaf/roles";
-
-  const rolesRaw =
-    p[NS] ||
-    p["https://senaf/roles"] ||
-    p["https://senaf.local/roles"] ||
-    p.roles ||
-    [];
-
+  const rolesRaw = p.roles || [];
   const roles = toArr(rolesRaw).filter(Boolean);
   const permissions = parsePermissionsFromPayload(p);
 
@@ -107,9 +67,44 @@ export function getUserFromPayload(p = {}) {
 }
 
 /**
- * Adjuntar usuario si hay JWT decodificado por express-oauth2-jwt-bearer
- * (eso deja req.auth.payload).
+ * Función middleware para autenticar el token JWT de la cabecera Authorization. Si el token es válido, adjunta el payload en req.auth.payload y el usuario construido en req.user. Si el token no es válido o no existe, responde con 401 a menos que se indique que la autenticación es opcional.
+ * @param {*} req 
+ * @param {*} res 
+ * @param {*} next 
+ * @param {*} optional 
+ * @returns 
  */
+function authenticateToken(req, res, next, optional = false) {
+  if (DISABLE_AUTH) return next();
+
+  const token = parseBearer(req);
+  if (!token) {
+    if (optional) return next();
+    return res.status(401).json({ ok: false, error: "No autenticado" });
+  }
+
+  try {
+    const payload = verifyAccessToken(token);
+    req.auth = req.auth || {};
+    req.auth.payload = payload;
+    req.user = getUserFromPayload(payload);
+    return next();
+  } catch (err) {
+    if (optional) return next();
+    return res.status(401).json({ ok: false, error: "Token inválido" });
+  }
+}
+
+export function requireAuth(req, res, next) {
+  return authenticateToken(req, res, next, false);
+}
+
+export { requireAuth as checkJwt };
+
+export function optionalAuth(req, res, next) {
+  return authenticateToken(req, res, next, true);
+}
+
 export function attachUser(req, _res, next) {
   if (req?.auth?.payload) {
     req.user = getUserFromPayload(req.auth.payload);
@@ -117,17 +112,10 @@ export function attachUser(req, _res, next) {
   next();
 }
 
-/**
- * ✅ EXPORT que tu server.js espera:
- * import { requireAuth, attachAuthUser } from "./middleware/auth.js"
- */
 export const attachAuthUser = attachUser;
 
-/* Admin Guard (solo para cosas ADMIN reales) */
 export function requireAdmin(req, res, next) {
-  const DEV_OPEN = String(process.env.DEV_OPEN || "0") === "1";
-
-  if (!IS_PROD && (DISABLE_AUTH || DEV_OPEN)) return next();
+  if (DISABLE_AUTH) return next();
 
   const user =
     req.user ||
@@ -149,3 +137,4 @@ export function requireAdmin(req, res, next) {
     perms,
   });
 }
+

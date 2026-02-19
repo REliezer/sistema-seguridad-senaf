@@ -8,6 +8,12 @@ import { writeAudit } from "../utils/audit.util.js";
 const r = Router();
 
 /* ===================== Helpers ===================== */
+function addDays(date, days) {
+  const d = new Date(date);
+  d.setDate(d.getDate() + days);
+  return d;
+}
+
 function normEmail(e) {
   return String(e || "").trim().toLowerCase();
 }
@@ -259,12 +265,16 @@ r.post("/", devOr(requirePerm("iam.users.manage")), async (req, res, next) => {
       roles: toStringArray(roles),
       perms: toStringArray(perms),
       active: normBool(active, true),
-      provider: provider || (password ? "local" : "auth0"),
+      provider: provider || "local",
     };
 
     if (password && String(password).trim()) {
+      const now = new Date();
       doc.passwordHash = await hashPassword(String(password));
       doc.provider = "local";
+      doc.passwordChangedAt = now;
+      doc.passwordExpiresAt = addDays(now, 60);
+      doc.mustChangePassword = true;
     }
 
     const item = await IamUser.create(doc);
@@ -417,10 +427,19 @@ r.post("/:id/password", devOr(requirePerm("iam.users.manage")), async (req, res,
     const before = await IamUser.findById(id).select("+passwordHash").lean();
     if (!before) return res.status(404).json({ ok: false, error: "No encontrado" });
 
+    const now = new Date();
     const passwordHash = await hashPassword(pwd);
     const item = await IamUser.findByIdAndUpdate(
       id,
-      { $set: { passwordHash, provider: "local" } },
+      {
+        $set: {
+          passwordHash,
+          provider: "local",
+          passwordChangedAt: now,
+          passwordExpiresAt: addDays(now, 60),
+          mustChangePassword: true,
+        },
+      },
       { new: true }
     ).select("+passwordHash").lean();
 

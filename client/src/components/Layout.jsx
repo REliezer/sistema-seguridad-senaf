@@ -62,9 +62,7 @@ export default function Layout({ children, hideSidebar: hideSidebarProp = false 
 
   return (
     <div className="min-h-[100svh] text-neutral-900 dark:text-neutral-100">
-      {/* Esto vive en todo el layout */}
       <GlobalPanicListener />
-
       {/* Fondo global */}
       <div className="app-bg pointer-events-none" aria-hidden />
 

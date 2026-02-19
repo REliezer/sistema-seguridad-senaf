@@ -35,13 +35,11 @@ export const env = {
   node: process.env.NODE_ENV || "development",
   port: Number(process.env.API_PORT || 4000),
   mongoUri: process.env.MONGODB_URI || process.env.MONGO_URI || null,
-  auth0: {
-    domain: process.env.AUTH0_DOMAIN,
-    audience: process.env.AUTH0_AUDIENCE,
-  },
+  jwtSecret: process.env.JWT_SECRET || process.env.APP_JWT_SECRET || null,
+  jwtExpiresIn: process.env.JWT_EXPIRES_IN || "8h",
   corsOrigin: splitCsv(process.env.CORS_ORIGIN),
 };
 
 if (!env.mongoUri) console.error("[env] ❌ Missing mongoUri (define MONGODB_URI)");
-if (!env.auth0.domain || !env.auth0.audience)
-  console.warn("[env] ⚠️ AUTH0_DOMAIN o AUTH0_AUDIENCE no definidos (Auth0 desactivado)");
+if (!env.jwtSecret)
+  console.warn("[env] ⚠️ JWT_SECRET no definido (la autenticación local fallará)");

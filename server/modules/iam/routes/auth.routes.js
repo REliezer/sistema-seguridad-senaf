@@ -1,15 +1,16 @@
-// server/src/routes/iam.me.routes.js (ejemplo)
 import { Router } from "express";
-import { buildContextFrom } from "../utils/rbac.util.js";
-const r = Router();
+import {
+  getSessionMe,
+  logout,
+  changePassword,
+  login,
+} from "../controllers/auth.controller.js";
 
-r.get("/me", async (req, res, next) => {
-  try {
-    const ctx = await buildContextFrom(req);
-    res.json({ user: ctx.user, roles: ctx.roles, permissions: ctx.permissions });
-  } catch (e) {
-    next(e);
-  }
-});
+const iamUserRoutes = Router();
 
-export default r;
+iamUserRoutes.get("/session/me", getSessionMe);
+iamUserRoutes.post("/logout", logout);
+iamUserRoutes.post("/change-password", changePassword);
+iamUserRoutes.post("/login", login);
+
+export default iamUserRoutes;

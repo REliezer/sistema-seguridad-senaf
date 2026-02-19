@@ -1,6 +1,6 @@
 // client/src/iam/pages/IamAdmin/UsersPage.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useAuth0 } from "@auth0/auth0-react";
+import { useAuth0 } from "../../../auth/local-auth-react.jsx";
 import { iamApi } from "../../api/iamApi.js";
 import { Edit3, Trash2 } from "lucide-react";
 
@@ -359,7 +359,6 @@ const PROFESIONES_OFICIOS = [
 
 // mismo flag que en iamApi.js, pero del lado del cliente
 const DISABLE_AUTH = import.meta.env.VITE_DISABLE_AUTH === "1";
-const AUTH_AUDIENCE = import.meta.env.VITE_AUTH0_AUDIENCE;
 
 /* ===================== Helpers básicos ===================== */
 
@@ -1013,12 +1012,7 @@ export default function UsersPage() {
     if (tokenRef.current) return tokenRef.current;
 
     try {
-      const t = await getAccessTokenSilently({
-        authorizationParams: {
-          audience: AUTH_AUDIENCE,
-          scope: "openid profile email offline_access",
-        },
-      });
+      const t = await getAccessTokenSilently();
       tokenRef.current = t;
       return t || null;
     } catch (e) {
@@ -1053,7 +1047,19 @@ export default function UsersPage() {
       const rolesRaw = resRoles?.items || resRoles?.roles || [];
       setRoleCatalog(Array.isArray(rolesRaw) ? rolesRaw : []);
     } catch (e) {
-      setErr(e?.message || "Error al cargar usuarios");
+      const st = Number(e?.status || e?.response?.status || 0);
+      if (st === 401) {
+        setErr("Sesión vencida o inválida. Inicia sesión nuevamente.");
+      } else if (st === 403) {
+        setErr("No tienes permisos para listar el catálogo de roles en producción.");
+      } else if (st >= 500) {
+        setErr("Error del servidor al cargar roles/usuarios. Intenta de nuevo en unos minutos.");
+      } else {
+        setErr(e?.message || "Error al cargar usuarios");
+      }
+      if (st === 401 || st === 403 || st >= 500) {
+        setRoleCatalog([]);
+      }
     } finally {
       setLoading(false);
     }
