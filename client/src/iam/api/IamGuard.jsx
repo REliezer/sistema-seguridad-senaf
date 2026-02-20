@@ -18,7 +18,6 @@ const IS_PROD = VITE_ENV === "production";
 
 // 🔓 Skip IAM SOLO en localhost o flags explícitos
 const SKIP_IAM =
-  IS_LOCALHOST ||
   String(import.meta.env.VITE_SKIP_VERIFY || "") === "1" ||
   String(import.meta.env.VITE_DISABLE_AUTH || "") === "1" ||
   String(import.meta.env.VITE_FORCE_DEV_IAM || "") === "1";
@@ -212,5 +211,7 @@ export default function IamGuard({
   if (asArr(allOf).length) ok = ok && hasAll(allOf);
   if (requireRole) ok = ok && hasRole(requireRole);
 
-  return ok ? <>{children}</> : (fallback || <div className="p-6">No autorizado</div>);
+  return ok
+    ? <>{children}</>
+    : (fallback !== undefined ? fallback : <div className="p-6">No autorizado</div>);
 }

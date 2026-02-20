@@ -249,7 +249,7 @@ export default function Home() {
             const badgeValue = BADGES[key] ?? 0;
 
             return (
-              <IamGuard key={key} anyOf={anyOf} fallback={null}>
+              <IamGuard key={key} anyOf={anyOf} fallback={<></>}>
                 <button
                   onClick={() => nav(s.path)}
                   className="fx-tile text-left p-4"
