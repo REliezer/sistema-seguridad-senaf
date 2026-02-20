@@ -22,6 +22,12 @@ const IamUserSchema = new mongoose.Schema({
     passwordChangedAt: { type: Date },
     passwordExpiresAt: { type: Date },
     mustChangePassword: { type: Boolean, default: true },
+    passwordResetCodeHash: { type: String, select: false },
+    passwordResetCodeExpiresAt: { type: Date, select: false },
+    passwordResetCodeAttempts: { type: Number, default: 0, select: false },
+    passwordResetCodeLockedUntil: { type: Date, select: false },
+    passwordResetCodeSentAt: { type: Date, select: false },
+    passwordResetVerifiedAt: { type: Date, select: false },
   },
   { timestamps: true, collection: "iamusers" },
 );

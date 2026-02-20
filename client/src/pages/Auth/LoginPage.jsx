@@ -4,6 +4,13 @@ import { useAuth0 } from "../../auth/local-auth-react.jsx";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "/api";
 
+function formatMmSs(totalSec) {
+  const sec = Math.max(0, Number(totalSec || 0));
+  const m = String(Math.floor(sec / 60)).padStart(2, "0");
+  const s = String(sec % 60).padStart(2, "0");
+  return `${m}:${s}`;
+}
+
 export default function LoginPage({ forceChange = false }) {
   const nav = useNavigate();
   const location = useLocation();
@@ -16,6 +23,137 @@ export default function LoginPage({ forceChange = false }) {
   const [needChange, setNeedChange] = React.useState(!!forceChange);
   const [msg, setMsg] = React.useState("");
   const [loading, setLoading] = React.useState(false);
+
+  const [codeModalOpen, setCodeModalOpen] = React.useState(false);
+  const [verificationCode, setVerificationCode] = React.useState("");
+  const [codeMsg, setCodeMsg] = React.useState("");
+  const [codeBusy, setCodeBusy] = React.useState(false);
+  const [expiresAt, setExpiresAt] = React.useState(null);
+  const [lockedUntil, setLockedUntil] = React.useState(null);
+  const [attemptsRemaining, setAttemptsRemaining] = React.useState(3);
+  const [timeLeftSec, setTimeLeftSec] = React.useState(0);
+  const [codeVerified, setCodeVerified] = React.useState(false);
+
+  const isExpired = !!expiresAt && timeLeftSec <= 0;
+  const isLocked = !!lockedUntil && new Date(lockedUntil).getTime() > Date.now();
+
+  React.useEffect(() => {
+    if (forceChange) setNeedChange(true);
+  }, [forceChange]);
+
+  React.useEffect(() => {
+    if (!expiresAt) {
+      setTimeLeftSec(0);
+      return;
+    }
+
+    const tick = () => {
+      const leftMs = new Date(expiresAt).getTime() - Date.now();
+      setTimeLeftSec(Math.max(0, Math.ceil(leftMs / 1000)));
+    };
+
+    tick();
+    const id = window.setInterval(tick, 1000);
+    return () => window.clearInterval(id);
+  }, [expiresAt]);
+
+  React.useEffect(() => {
+    // Si cambia el correo, invalida verificacion previa.
+    setCodeVerified(false);
+  }, [email]);
+
+  function updateCodeState(data = {}) {
+    if (data?.expiresAt) setExpiresAt(data.expiresAt);
+    if (typeof data?.attemptsRemaining === "number") {
+      setAttemptsRemaining(Math.max(0, data.attemptsRemaining));
+    }
+    if (data?.lockedUntil) {
+      setLockedUntil(data.lockedUntil);
+    } else if (data?.lockedUntil === null) {
+      setLockedUntil(null);
+    }
+  }
+
+  function humanFetchError(err, fallback) {
+    const m = String(err?.message || "");
+    if (m.toLowerCase().includes("failed to fetch")) {
+      return `No se pudo conectar con la API (${API_BASE}). Revisa VITE_API_BASE_URL y CORS.`;
+    }
+    return m || fallback;
+  }
+
+  async function requestPasswordCode({ openModal = true } = {}) {
+    if (!email) {
+      setMsg("Ingresa tu correo para recibir el codigo.");
+      return false;
+    }
+
+    setCodeBusy(true);
+    setCodeMsg("");
+    try {
+      const r = await fetch(`${API_BASE}/iam/v1/auth/password-code/request`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      const data = await r.json().catch(() => ({}));
+
+      updateCodeState(data);
+
+      if (!r.ok) {
+        throw new Error(data?.error || "No se pudo enviar el codigo");
+      }
+
+      setCodeVerified(false);
+      setVerificationCode("");
+      setCodeMsg("Codigo enviado al correo.");
+      if (openModal) setCodeModalOpen(true);
+      return true;
+    } catch (err) {
+      setCodeMsg(humanFetchError(err, "Error al enviar codigo"));
+      return false;
+    } finally {
+      setCodeBusy(false);
+    }
+  }
+
+  async function verifyCode() {
+    if (!email) {
+      setCodeMsg("Correo requerido.");
+      return;
+    }
+
+    if (!/^\d{6}$/.test(verificationCode)) {
+      setCodeMsg("Ingresa un codigo de 6 digitos.");
+      return;
+    }
+
+    setCodeBusy(true);
+    setCodeMsg("");
+    try {
+      const r = await fetch(`${API_BASE}/iam/v1/auth/password-code/verify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, code: verificationCode }),
+      });
+      const data = await r.json().catch(() => ({}));
+
+      updateCodeState(data);
+
+      if (!r.ok) {
+        throw new Error(data?.error || "Codigo invalido");
+      }
+
+      setCodeVerified(true);
+      setCodeModalOpen(false);
+      setMsg("Codigo verificado. Ahora guarda la nueva contraseña.");
+    } catch (err) {
+      setCodeVerified(false);
+      setCodeMsg(humanFetchError(err, "No se pudo validar el codigo"));
+    } finally {
+      setCodeBusy(false);
+    }
+  }
 
   async function doLogin(e) {
     e?.preventDefault();
@@ -33,6 +171,7 @@ export default function LoginPage({ forceChange = false }) {
         if (data?.code === "PASSWORD_CHANGE_REQUIRED") {
           setNeedChange(true);
           setMsg("Debes cambiar la contraseña para continuar.");
+          await requestPasswordCode({ openModal: true });
           return;
         }
         throw new Error(data?.error || "No se pudo iniciar sesion");
@@ -64,10 +203,6 @@ export default function LoginPage({ forceChange = false }) {
     }
   }
 
-  React.useEffect(() => {
-    if (forceChange) setNeedChange(true);
-  }, [forceChange]);
-
   async function doChangePassword(e) {
     e?.preventDefault();
     setMsg("");
@@ -77,8 +212,18 @@ export default function LoginPage({ forceChange = false }) {
       return;
     }
 
+    if (!codeVerified) {
+      setMsg("Debes validar el codigo de verificacion.");
+      if (!expiresAt || isExpired) {
+        const ok = await requestPasswordCode({ openModal: true });
+        if (!ok) return;
+      }
+      setCodeModalOpen(true);
+      return;
+    }
+
     if (!newPassword || newPassword !== confirm) {
-      setMsg("La nueva contraseña y la confirmaci'o'n deben coincidir.");
+      setMsg("La nueva contraseña y la confirmacion deben coincidir.");
       return;
     }
 
@@ -99,7 +244,7 @@ export default function LoginPage({ forceChange = false }) {
       }
 
       if (data?.token) setLocalSession(data.token);
-      window.alert("Contrasena cambiada exitosamente.");
+      window.alert("Contraseña cambiada exitosamente.");
       nav("/start", { replace: true });
     } catch (err) {
       setMsg(err?.message || "Error al cambiar contraseña");
@@ -134,7 +279,7 @@ export default function LoginPage({ forceChange = false }) {
               {needChange ? "Cambio de contraseña" : "Iniciar sesion"}
             </h1>
 
-            <label className="block text-sm text-cyan-100/90">Correo Electronico</label>
+            <label className="block text-sm text-cyan-100/90">Correo electronico</label>
             <input
               type="email"
               className="w-full rounded border text-cyan-100/90 border-cyan-500/40 bg-black/30 p-2"
@@ -158,9 +303,7 @@ export default function LoginPage({ forceChange = false }) {
 
             {needChange && forceChange && (
               <>
-                <label className="block text-sm text-cyan-100/90">
-                  Contraseña actual
-                </label>
+                <label className="block text-sm text-cyan-100/90">Contraseña actual</label>
                 <input
                   type="password"
                   className="w-full rounded border text-cyan-100/90 border-cyan-500/40 bg-black/30 p-2"
@@ -174,21 +317,36 @@ export default function LoginPage({ forceChange = false }) {
             {!needChange && (
               <button
                 type="button"
-                onClick={() => {
+                onClick={async () => {
                   setNeedChange(true);
                   setMsg("");
+                  if (email) {
+                    await requestPasswordCode({ openModal: true });
+                  } else {
+                    setMsg("Ingresa tu correo para enviar el codigo.");
+                  }
                 }}
                 className="text-sm text-cyan-300 font-light hover:text-cyan-200 cursor-pointer hover:underline"
               >
-                Cambiar contraseña
+                Olvide mi contraseña
               </button>
             )}
 
             {needChange && (
               <>
-                <label className="block text-sm text-cyan-100/90">
-                  Nueva contraseña
-                </label>
+                <div className="rounded border border-cyan-500/30 bg-black/25 p-3 text-sm text-cyan-100/90">
+                  <p>Codigo verificado: {codeVerified ? "SI" : "NO"}</p>
+                  <button
+                    type="button"
+                    onClick={() => requestPasswordCode({ openModal: true })}
+                    disabled={codeBusy || !email}
+                    className={`mt-2 rounded border border-cyan-500/40 px-2 py-1 text-cyan-200 disabled:opacity-50 ${codeBusy ? "cursor-not-allowed" : "cursor-pointer"}`}
+                  >
+                    {codeBusy ? "Enviando..." : "Enviar/Reenviar codigo"}
+                  </button>
+                </div>
+
+                <label className="block text-sm text-cyan-100/90">Nueva contraseña</label>
                 <input
                   type="password"
                   className="w-full rounded border text-cyan-100/90 border-cyan-500/40 bg-black/30 p-2"
@@ -196,9 +354,7 @@ export default function LoginPage({ forceChange = false }) {
                   onChange={(e) => setNewPassword(e.target.value)}
                   required
                 />
-                <label className="block text-sm text-cyan-100/90">
-                  Confirmar contraseña
-                </label>
+                <label className="block text-sm text-cyan-100/90">Confirmar contraseña</label>
                 <input
                   type="password"
                   className="w-full rounded border text-cyan-100/90 border-cyan-500/40 bg-black/30 p-2"
@@ -213,8 +369,8 @@ export default function LoginPage({ forceChange = false }) {
 
             <button
               type="submit"
-              disabled={loading}
-              className="w-full rounded bg-cyan-500/80 px-3 py-2 font-medium text-black disabled:opacity-60 cursor-pointer"
+              disabled={loading || (needChange && !codeVerified)}
+              className={`w-full rounded bg-cyan-500/80 px-3 py-2 font-medium text-black disabled:opacity-60 ${needChange && !codeVerified ? "cursor-not-allowed" : "cursor-pointer"}`}
             >
               {loading
                 ? "Procesando..."
@@ -231,16 +387,82 @@ export default function LoginPage({ forceChange = false }) {
                   setMsg("");
                   setNewPassword("");
                   setConfirm("");
+                  setCodeVerified(false);
+                  setVerificationCode("");
+                  setCodeMsg("");
+                  setExpiresAt(null);
+                  setLockedUntil(null);
+                  setAttemptsRemaining(3);
                 }}
                 className="w-full rounded border border-cyan-500/40 px-3 py-2 text-cyan-100 hover:bg-cyan-500/10 cursor-pointer"
               >
-                Volver a iniciar sesión
+                Volver a iniciar sesion
               </button>
             )}
           </form>
         </div>
       </section>
+
+      {codeModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+          <div className="w-full max-w-md rounded-xl border border-cyan-500/40 bg-neutral-950 p-4 space-y-3">
+            <h2 className="text-lg font-semibold text-cyan-100">Validar codigo</h2>
+            <p className="text-sm text-cyan-100/80">
+              Ingresa el codigo de 6 digitos enviado a tu correo.
+            </p>
+            <p className="text-sm text-cyan-200">Tiempo restante: {formatMmSs(timeLeftSec)}</p>
+            <p className="text-sm text-cyan-200">Intentos restantes: {attemptsRemaining}</p>
+
+            <input
+              type="text"
+              inputMode="numeric"
+              maxLength={6}
+              value={verificationCode}
+              disabled={isLocked || isExpired}
+              onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, ""))}
+              className="w-full rounded border border-cyan-500/40 bg-black/30 p-2 text-cyan-100 tracking-[0.3em] text-center"
+              placeholder="000000"
+            />
+
+            {codeMsg ? <p className="text-sm text-amber-300">{codeMsg}</p> : null}
+            {isLocked ? (
+              <p className="text-sm text-amber-300">Bloqueado por intentos agotados.</p>
+            ) : null}
+            {isExpired ? (
+              <p className="text-sm text-amber-300">Codigo expirado.</p>
+            ) : null}
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={verifyCode}
+                disabled={codeBusy || isLocked || isExpired}
+                className="flex-1 rounded bg-cyan-500/80 px-3 py-2 font-medium text-black disabled:opacity-50"
+              >
+                {codeBusy ? "Validando..." : "Validar codigo"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setCodeModalOpen(false)}
+                className="rounded border border-cyan-500/40 px-3 py-2 text-cyan-100"
+              >
+                Cerrar
+              </button>
+            </div>
+
+            {(isExpired || isLocked) && (
+              <button
+                type="button"
+                onClick={() => requestPasswordCode({ openModal: true })}
+                disabled={codeBusy}
+                className="text-sm text-cyan-300 hover:text-cyan-200 hover:underline"
+              >
+                Solicitar nuevo codigo
+              </button>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-
