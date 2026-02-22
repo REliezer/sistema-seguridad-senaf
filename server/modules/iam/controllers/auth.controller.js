@@ -1,5 +1,5 @@
 import { buildContextFrom } from "../utils/rbac.util.js";
-import { createHash, randomInt } from "node:crypto";
+import { randomInt } from "node:crypto";
 import IamUser from "../models/IamUser.model.js";
 import {
   hashPassword,
@@ -8,79 +8,15 @@ import {
   verifyPassword,
 } from "../utils/password.util.js";
 import { signAccessToken } from "../utils/jwt.util.js";
-
-const CODE_TTL_MS = 10 * 60 * 1000;
-const CODE_MAX_ATTEMPTS = 3;
-
-function hashCode(code) {
-  return createHash("sha256")
-    .update(String(code || ""))
-    .digest("hex");
-}
-
-function buildFormspreeEndpoint() {
-  const endpoint = String(process.env.FORMSPREE_ENDPOINT || "").trim();
-  if (endpoint) return endpoint;
-
-  const formId = String(process.env.FORMSPREE_FORM_ID || "").trim();
-  if (!formId) return null;
-  return `https://formspree.io/f/${formId}`;
-}
-
-async function sendPasswordCodeByFormspree({ email, code }) {
-  const endpoint = buildFormspreeEndpoint();
-  if (!endpoint) {
-    throw new Error("FORMSPREE_ENDPOINT o FORMSPREE_FORM_ID no configurado");
-  }
-
-  const body = {
-    email: "no-reply@senaf.local",
-    _subject: "Codigo de verificacion SENAF",
-    message: `Tu codigo de verificacion es ${code}. Expira en 10 minutos.`,
-    to: email,
-  };
-
-  const r = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
-    body: JSON.stringify(body),
-  });
-
-  if (!r.ok) {
-    const txt = await r.text().catch(() => "");
-    throw new Error(`No se pudo enviar correo por Formspree (${r.status}) ${txt}`);
-  }
-}
-
-/**
- * Helper para sumar días a una fecha. Devuelve una nueva fecha.
- * @param {Date} date 
- * @param {number} days 
- * @returns {Date}
- */
-function addDays(date, days) {
-  const d = new Date(date);
-  d.setDate(d.getDate() + days);
-  return d;
-}
-
-/**
- * Helper para construir el payload del JWT a partir de un usuario. Incluye sub (externalId o _id), email, name, roles y permissions.
- * @param {*} user 
- * @returns 
- */
-function buildUserJwtPayload(user) {
-  return {
-    sub: user.externalId || String(user._id),
-    email: user.email || null,
-    name: user.name || null,
-    roles: Array.isArray(user.roles) ? user.roles : [],
-    permissions: Array.isArray(user.perms) ? user.perms : [],
-  };
-}
+import {
+  addDays,
+  buildUserJwtPayload,
+  clearAuthCookies,
+  CODE_MAX_ATTEMPTS,
+  CODE_TTL_MS,
+  hashCode,
+  sendPasswordCode,
+} from "../utils/auth.helpers.js";
 
 /**
  * Controlador para login local con email y password. Verifica credenciales, estado del usuario, expiración de contraseña y devuelve un JWT si es válido. Si es el primer login o la contraseña expiró, devuelve un error indicando que se requiere cambio de contraseña.
@@ -111,14 +47,14 @@ export const login = async (req, res, next) => {
     if (!user || !user.passwordHash || !user.active) {
       return res
         .status(401)
-        .json({ ok: false, error: "credenciales inválidas" });
+        .json({ ok: false, error: "Credenciales inválidas" });
     }
 
     const valid = await verifyPassword(password, user.passwordHash);
     if (!valid) {
       return res
         .status(401)
-        .json({ ok: false, error: "credenciales inválidas" });
+        .json({ ok: false, error: "Credenciales inválidas" });
     }
 
     const passwordExpired = isPasswordExpired(user.passwordExpiresAt);
@@ -152,17 +88,18 @@ export const login = async (req, res, next) => {
  */
 export const changePassword = async (req, res, next) => {
   try {
-    const email = String(req.body?.email || "").trim().toLowerCase();
+    const email = String(req.body?.email || "")
+      .trim()
+      .toLowerCase();
     const currentPassword = String(req.body?.currentPassword || "");
     const newPassword = String(req.body?.newPassword || "");
 
     if (!email || !newPassword) {
-      return res
-        .status(400)
-        .json({
-          ok: false,
-          error: "Los campos correo electronico y Nueva contraseña son requeridos.",
-        });
+      return res.status(400).json({
+        ok: false,
+        error:
+          "Los campos correo electronico y Nueva contraseña son requeridos.",
+      });
     }
 
     if (!validatePasswordPolicy(newPassword)) {
@@ -187,15 +124,19 @@ export const changePassword = async (req, res, next) => {
     const needsCodeVerification = !!user.mustChangePassword || !currentPassword;
     if (needsCodeVerification) {
       const sentAtMs = new Date(user.passwordResetCodeSentAt || 0).getTime();
-      const verifiedAtMs = new Date(user.passwordResetVerifiedAt || 0).getTime();
-      const verifiedIsFresh = verifiedAtMs && Date.now() - verifiedAtMs <= CODE_TTL_MS;
+      const verifiedAtMs = new Date(
+        user.passwordResetVerifiedAt || 0,
+      ).getTime();
+      const verifiedIsFresh =
+        verifiedAtMs && Date.now() - verifiedAtMs <= CODE_TTL_MS;
       const isAfterLastCode = verifiedAtMs >= sentAtMs;
 
       if (!verifiedIsFresh || !isAfterLastCode) {
         return res.status(403).json({
           ok: false,
           code: "PASSWORD_CODE_REQUIRED",
-          error: "Debes validar el codigo enviado al correo antes de cambiar la contrasena.",
+          error:
+            "Debes validar el codigo enviado al correo antes de cambiar la contraseña.",
         });
       }
     }
@@ -252,9 +193,11 @@ export const changePassword = async (req, res, next) => {
  */
 export const requestPasswordCode = async (req, res, next) => {
   try {
-    const email = String(req.body?.email || "").trim().toLowerCase();
+    const email = String(req.body?.email || "")
+      .trim()
+      .toLowerCase();
     if (!email) {
-      return res.status(400).json({ ok: false, error: "email requerido" });
+      return res.status(400).json({ ok: false, error: "Email requerido" });
     }
 
     const user = await IamUser.findOne({ email }).select(
@@ -262,18 +205,25 @@ export const requestPasswordCode = async (req, res, next) => {
     );
 
     if (!user || !user.active) {
-      return res.status(404).json({ ok: false, error: "Usuario no encontrado" });
+      return res
+        .status(404)
+        .json({ ok: false, error: "Usuario no encontrado" });
     }
 
     const now = Date.now();
-    const lockedUntilMs = new Date(user.passwordResetCodeLockedUntil || 0).getTime();
-    const expiresAtMs = new Date(user.passwordResetCodeExpiresAt || 0).getTime();
+    const lockedUntilMs = new Date(
+      user.passwordResetCodeLockedUntil || 0,
+    ).getTime();
+    const expiresAtMs = new Date(
+      user.passwordResetCodeExpiresAt || 0,
+    ).getTime();
 
     if (lockedUntilMs > now && expiresAtMs > now) {
       return res.status(429).json({
         ok: false,
         code: "PASSWORD_CODE_LOCKED",
-        error: "Codigo bloqueado temporalmente. Espera para solicitar uno nuevo.",
+        error:
+          "Codigo bloqueado temporalmente. Espera para solicitar uno nuevo.",
         lockedUntil: new Date(lockedUntilMs).toISOString(),
         expiresAt: new Date(expiresAtMs).toISOString(),
       });
@@ -290,11 +240,18 @@ export const requestPasswordCode = async (req, res, next) => {
     user.passwordResetVerifiedAt = undefined;
     await user.save();
 
-    await sendPasswordCodeByFormspree({ email: user.email, code });
+    const result = await sendPasswordCode({ email: email, code });
+
+    if (!result?.success) {
+      return res.status(500).json({
+        ok: false,
+        error: result?.error || "No se pudo enviar el código",
+      });
+    }
 
     return res.json({
       ok: true,
-      message: "Codigo enviado",
+      message: `Codigo enviado a ${email}`,
       expiresAt: expiresAt.toISOString(),
       attemptsRemaining: CODE_MAX_ATTEMPTS,
     });
@@ -311,11 +268,15 @@ export const requestPasswordCode = async (req, res, next) => {
  */
 export const verifyPasswordCode = async (req, res, next) => {
   try {
-    const email = String(req.body?.email || "").trim().toLowerCase();
+    const email = String(req.body?.email || "")
+      .trim()
+      .toLowerCase();
     const code = String(req.body?.code || "").trim();
 
     if (!email || !code) {
-      return res.status(400).json({ ok: false, error: "email y code son requeridos" });
+      return res
+        .status(400)
+        .json({ ok: false, error: "email y code son requeridos" });
     }
 
     const user = await IamUser.findOne({ email }).select(
@@ -323,12 +284,18 @@ export const verifyPasswordCode = async (req, res, next) => {
     );
 
     if (!user || !user.active) {
-      return res.status(404).json({ ok: false, error: "Usuario no encontrado" });
+      return res
+        .status(404)
+        .json({ ok: false, error: "Usuario no encontrado" });
     }
 
     const now = Date.now();
-    const expiresAtMs = new Date(user.passwordResetCodeExpiresAt || 0).getTime();
-    const lockedUntilMs = new Date(user.passwordResetCodeLockedUntil || 0).getTime();
+    const expiresAtMs = new Date(
+      user.passwordResetCodeExpiresAt || 0,
+    ).getTime();
+    const lockedUntilMs = new Date(
+      user.passwordResetCodeLockedUntil || 0,
+    ).getTime();
 
     if (!user.passwordResetCodeHash || !expiresAtMs) {
       return res.status(400).json({
@@ -361,8 +328,12 @@ export const verifyPasswordCode = async (req, res, next) => {
     const isValid = incomingHash === user.passwordResetCodeHash;
 
     if (!isValid) {
-      user.passwordResetCodeAttempts = Number(user.passwordResetCodeAttempts || 0) + 1;
-      const attemptsRemaining = Math.max(0, CODE_MAX_ATTEMPTS - user.passwordResetCodeAttempts);
+      user.passwordResetCodeAttempts =
+        Number(user.passwordResetCodeAttempts || 0) + 1;
+      const attemptsRemaining = Math.max(
+        0,
+        CODE_MAX_ATTEMPTS - user.passwordResetCodeAttempts,
+      );
 
       if (attemptsRemaining <= 0) {
         user.passwordResetCodeLockedUntil = new Date(expiresAtMs);
@@ -372,7 +343,10 @@ export const verifyPasswordCode = async (req, res, next) => {
 
       return res.status(400).json({
         ok: false,
-        code: attemptsRemaining <= 0 ? "PASSWORD_CODE_LOCKED" : "PASSWORD_CODE_INVALID",
+        code:
+          attemptsRemaining <= 0
+            ? "PASSWORD_CODE_LOCKED"
+            : "PASSWORD_CODE_INVALID",
         error:
           attemptsRemaining <= 0
             ? "Se agotaron los intentos. Espera para solicitar un nuevo codigo."
@@ -404,36 +378,14 @@ export const verifyPasswordCode = async (req, res, next) => {
  */
 export const logout = async (req, res, next) => {
   try {
-    const clearAuthCookies = () => {
-      const names = [
-        "access_token",
-        "id_token",
-        "refresh_token",
-        "token",
-        "jwt",
-        "connect.sid",
-      ];
-      for (const name of names) {
-        res.clearCookie(name, {
-          httpOnly: true,
-          sameSite: "lax",
-          secure: process.env.NODE_ENV === "production",
-        });
-        res.clearCookie(name, {
-          sameSite: "lax",
-          secure: process.env.NODE_ENV === "production",
-        });
-      }
-    };
-
     if (req.session?.destroy) {
       return req.session.destroy(() => {
-        clearAuthCookies();
+        clearAuthCookies(res);
         return res.json({ ok: true, message: "Logged out" });
       });
     }
 
-    clearAuthCookies();
+    clearAuthCookies(res);
     res.json({ ok: true, message: "Logged out" });
   } catch (e) {
     next(e);
@@ -460,4 +412,3 @@ export const getSessionMe = async (req, res, next) => {
     next(e);
   }
 };
-

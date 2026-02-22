@@ -1,21 +1,24 @@
 import React from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { useAuth0 } from "../../auth/local-auth-react.jsx";
-
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "/api";
-
-function formatMmSs(totalSec) {
-  const sec = Math.max(0, Number(totalSec || 0));
-  const m = String(Math.floor(sec / 60)).padStart(2, "0");
-  const s = String(sec % 60).padStart(2, "0");
-  return `${m}:${s}`;
-}
+import { toast } from "sonner";
+import { useAuthService } from "../../hooks/useAuthService";
+import {
+  formatMmSs,
+  parseCodeState,
+  humanFetchError,
+} from "../../utils/utils.js";
 
 export default function LoginPage({ forceChange = false }) {
-  const nav = useNavigate();
-  const location = useLocation();
-  const { setLocalSession } = useAuth0();
+  const {
+    loading: svcLoading,
+    codeState: svcCodeState,
+    requestPasswordCode: svcRequestPasswordCode,
+    verifyPasswordCode: svcVerifyPasswordCode,
+    login: svcLogin,
+    changePassword: svcChangePassword,
+  } = useAuthService();
 
+  // Local UI state
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [newPassword, setNewPassword] = React.useState("");
@@ -28,18 +31,25 @@ export default function LoginPage({ forceChange = false }) {
   const [verificationCode, setVerificationCode] = React.useState("");
   const [codeMsg, setCodeMsg] = React.useState("");
   const [codeBusy, setCodeBusy] = React.useState(false);
+  const [codeVerified, setCodeVerified] = React.useState(false);
+
+  // Code state mirrored from the service hook
   const [expiresAt, setExpiresAt] = React.useState(null);
   const [lockedUntil, setLockedUntil] = React.useState(null);
   const [attemptsRemaining, setAttemptsRemaining] = React.useState(3);
   const [timeLeftSec, setTimeLeftSec] = React.useState(0);
-  const [codeVerified, setCodeVerified] = React.useState(false);
-
-  const isExpired = !!expiresAt && timeLeftSec <= 0;
-  const isLocked = !!lockedUntil && new Date(lockedUntil).getTime() > Date.now();
 
   React.useEffect(() => {
     if (forceChange) setNeedChange(true);
   }, [forceChange]);
+
+  // Mirror svcCodeState into local state to ease UI compatibility
+  React.useEffect(() => {
+    const parsed = parseCodeState(svcCodeState || {});
+    setExpiresAt(parsed.expiresAt);
+    setAttemptsRemaining(parsed.attemptsRemaining);
+    setLockedUntil(parsed.lockedUntil);
+  }, [svcCodeState]);
 
   React.useEffect(() => {
     if (!expiresAt) {
@@ -62,55 +72,30 @@ export default function LoginPage({ forceChange = false }) {
     setCodeVerified(false);
   }, [email]);
 
-  function updateCodeState(data = {}) {
-    if (data?.expiresAt) setExpiresAt(data.expiresAt);
-    if (typeof data?.attemptsRemaining === "number") {
-      setAttemptsRemaining(Math.max(0, data.attemptsRemaining));
-    }
-    if (data?.lockedUntil) {
-      setLockedUntil(data.lockedUntil);
-    } else if (data?.lockedUntil === null) {
-      setLockedUntil(null);
-    }
-  }
-
-  function humanFetchError(err, fallback) {
-    const m = String(err?.message || "");
-    if (m.toLowerCase().includes("failed to fetch")) {
-      return `No se pudo conectar con la API (${API_BASE}). Revisa VITE_API_BASE_URL y CORS.`;
-    }
-    return m || fallback;
-  }
+  const isExpired = !!expiresAt && timeLeftSec <= 0;
+  const isLocked =
+    !!lockedUntil && new Date(lockedUntil).getTime() > Date.now();
 
   async function requestPasswordCode({ openModal = true } = {}) {
+    setMsg("");
     if (!email) {
-      setMsg("Ingresa tu correo para recibir el codigo.");
+      toast.info("Ingresa tu correo para recibir el código.");
       return false;
     }
 
     setCodeBusy(true);
     setCodeMsg("");
     try {
-      const r = await fetch(`${API_BASE}/iam/v1/auth/password-code/request`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
-      });
-      const data = await r.json().catch(() => ({}));
-
-      updateCodeState(data);
-
-      if (!r.ok) {
-        throw new Error(data?.error || "No se pudo enviar el codigo");
+      const res = await svcRequestPasswordCode(email, openModal);
+      if (!res?.ok) {
+        return false;
       }
-
       setCodeVerified(false);
       setVerificationCode("");
-      setCodeMsg("Codigo enviado al correo.");
       if (openModal) setCodeModalOpen(true);
       return true;
     } catch (err) {
-      setCodeMsg(humanFetchError(err, "Error al enviar codigo"));
+      toast.error(humanFetchError(err, "Error al enviar codigo"));
       return false;
     } finally {
       setCodeBusy(false);
@@ -120,6 +105,7 @@ export default function LoginPage({ forceChange = false }) {
   async function verifyCode() {
     if (!email) {
       setCodeMsg("Correo requerido.");
+      toast.info("Correo requerido.");
       return;
     }
 
@@ -131,25 +117,19 @@ export default function LoginPage({ forceChange = false }) {
     setCodeBusy(true);
     setCodeMsg("");
     try {
-      const r = await fetch(`${API_BASE}/iam/v1/auth/password-code/verify`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, code: verificationCode }),
-      });
-      const data = await r.json().catch(() => ({}));
-
-      updateCodeState(data);
-
-      if (!r.ok) {
-        throw new Error(data?.error || "Codigo invalido");
+      const res = await svcVerifyPasswordCode(email, verificationCode);
+      if (!res?.ok) {
+        return false;
       }
 
       setCodeVerified(true);
       setCodeModalOpen(false);
       setMsg("Codigo verificado. Ahora guarda la nueva contraseña.");
+      return true;
     } catch (err) {
       setCodeVerified(false);
-      setCodeMsg(humanFetchError(err, "No se pudo validar el codigo"));
+      toast.error(humanFetchError(err, "No se pudo validar el codigo"));
+      return false;
     } finally {
       setCodeBusy(false);
     }
@@ -160,44 +140,23 @@ export default function LoginPage({ forceChange = false }) {
     setMsg("");
     setLoading(true);
     try {
-      const r = await fetch(`${API_BASE}/iam/v1/auth/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-      });
-      const data = await r.json().catch(() => ({}));
+      const res = await svcLogin(email, password);
 
-      if (!r.ok) {
-        if (data?.code === "PASSWORD_CHANGE_REQUIRED") {
+      if (!res?.ok) {
+        // If server requires password change, surface it
+        if (res?.res?.data?.code === "PASSWORD_CHANGE_REQUIRED" || res?.res?.data?.requirePasswordChange) {
           setNeedChange(true);
           setMsg("Debes cambiar la contraseña para continuar.");
           await requestPasswordCode({ openModal: true });
           return;
         }
-        throw new Error(data?.error || "No se pudo iniciar sesion");
+        throw new Error(res?.error || "Credenciales invalidas.");
       }
-
-      if (!data?.token) throw new Error("No se recibio token de sesion");
-
-      setLocalSession(data.token);
-      window.alert("Inicio de sesion exitoso.");
-
-      const returnTo = (() => {
-        const fromState = location?.state?.from;
-        if (typeof fromState === "string" && fromState.startsWith("/")) {
-          return fromState;
-        }
-        try {
-          const raw = sessionStorage.getItem("auth:returnTo");
-          return typeof raw === "string" && raw.startsWith("/") ? raw : "/start";
-        } catch {
-          return "/start";
-        }
-      })();
-
-      nav(returnTo, { replace: true });
+      const token = res?.res?.data?.token || res?.res?.data?.token;
+      if (!token) throw new Error("No se recibio token de sesión");
+      
     } catch (err) {
-      setMsg(err?.message || "Error de autenticacion");
+      toast.error(err?.message || "Error de autenticación");
     } finally {
       setLoading(false);
     }
@@ -208,12 +167,12 @@ export default function LoginPage({ forceChange = false }) {
     setMsg("");
 
     if (forceChange && !password) {
-      setMsg("Debes ingresar la contraseña actual.");
+      toast.info("Debes ingresar la contraseña actual.");
       return;
     }
 
     if (!codeVerified) {
-      setMsg("Debes validar el codigo de verificacion.");
+      toast.info("Debes validar el código de verificación.");
       if (!expiresAt || isExpired) {
         const ok = await requestPasswordCode({ openModal: true });
         if (!ok) return;
@@ -223,31 +182,25 @@ export default function LoginPage({ forceChange = false }) {
     }
 
     if (!newPassword || newPassword !== confirm) {
-      setMsg("La nueva contraseña y la confirmacion deben coincidir.");
+      toast.warning("La nueva contraseña y la confirmación deben coincidir.");
       return;
     }
 
     setLoading(true);
     try {
-      const r = await fetch(`${API_BASE}/iam/v1/auth/change-password`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email,
-          ...(forceChange ? { currentPassword: password } : {}),
-          newPassword,
-        }),
-      });
-      const data = await r.json().catch(() => ({}));
-      if (!r.ok) {
-        throw new Error(data?.error || "No se pudo cambiar la contraseña");
-      }
+      const payload = {
+        email,
+        ...(forceChange ? { currentPassword: password } : {}),
+        newPassword,
+      };
 
-      if (data?.token) setLocalSession(data.token);
-      window.alert("Contraseña cambiada exitosamente.");
-      nav("/start", { replace: true });
+      const res = await svcChangePassword(payload);
+      if (!res?.ok) {
+        return;
+      }
     } catch (err) {
       setMsg(err?.message || "Error al cambiar contraseña");
+      toast.error(err?.message || "Error al cambiar contraseña");
     } finally {
       setLoading(false);
     }
@@ -279,7 +232,9 @@ export default function LoginPage({ forceChange = false }) {
               {needChange ? "Cambio de contraseña" : "Iniciar sesion"}
             </h1>
 
-            <label className="block text-sm text-cyan-100/90">Correo electronico</label>
+            <label className="block text-sm text-cyan-100/90">
+              Correo electronico
+            </label>
             <input
               type="email"
               className="w-full rounded border text-cyan-100/90 border-cyan-500/40 bg-black/30 p-2"
@@ -290,7 +245,9 @@ export default function LoginPage({ forceChange = false }) {
 
             {!needChange && (
               <>
-                <label className="block text-sm text-cyan-100/90">Contraseña</label>
+                <label className="block text-sm text-cyan-100/90">
+                  Contraseña
+                </label>
                 <input
                   type="password"
                   className="w-full rounded border text-cyan-100/90 border-cyan-500/40 bg-black/30 p-2"
@@ -303,7 +260,9 @@ export default function LoginPage({ forceChange = false }) {
 
             {needChange && forceChange && (
               <>
-                <label className="block text-sm text-cyan-100/90">Contraseña actual</label>
+                <label className="block text-sm text-cyan-100/90">
+                  Contraseña actual
+                </label>
                 <input
                   type="password"
                   className="w-full rounded border text-cyan-100/90 border-cyan-500/40 bg-black/30 p-2"
@@ -345,8 +304,9 @@ export default function LoginPage({ forceChange = false }) {
                     {codeBusy ? "Enviando..." : "Enviar/Reenviar codigo"}
                   </button>
                 </div>
-
-                <label className="block text-sm text-cyan-100/90">Nueva contraseña</label>
+                <label className="block text-sm text-cyan-100/90">
+                  Nueva contraseña
+                </label>
                 <input
                   type="password"
                   className="w-full rounded border text-cyan-100/90 border-cyan-500/40 bg-black/30 p-2"
@@ -354,7 +314,9 @@ export default function LoginPage({ forceChange = false }) {
                   onChange={(e) => setNewPassword(e.target.value)}
                   required
                 />
-                <label className="block text-sm text-cyan-100/90">Confirmar contraseña</label>
+                <label className="block text-sm text-cyan-100/90">
+                  Confirmar contraseña
+                </label>
                 <input
                   type="password"
                   className="w-full rounded border text-cyan-100/90 border-cyan-500/40 bg-black/30 p-2"
@@ -406,12 +368,18 @@ export default function LoginPage({ forceChange = false }) {
       {codeModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
           <div className="w-full max-w-md rounded-xl border border-cyan-500/40 bg-neutral-950 p-4 space-y-3">
-            <h2 className="text-lg font-semibold text-cyan-100">Validar codigo</h2>
+            <h2 className="text-lg font-semibold text-cyan-100">
+              Validar codigo
+            </h2>
             <p className="text-sm text-cyan-100/80">
               Ingresa el codigo de 6 digitos enviado a tu correo.
             </p>
-            <p className="text-sm text-cyan-200">Tiempo restante: {formatMmSs(timeLeftSec)}</p>
-            <p className="text-sm text-cyan-200">Intentos restantes: {attemptsRemaining}</p>
+            <p className="text-sm text-cyan-200">
+              Tiempo restante: {formatMmSs(timeLeftSec)}
+            </p>
+            <p className="text-sm text-cyan-200">
+              Intentos restantes: {attemptsRemaining}
+            </p>
 
             <input
               type="text"
@@ -419,14 +387,20 @@ export default function LoginPage({ forceChange = false }) {
               maxLength={6}
               value={verificationCode}
               disabled={isLocked || isExpired}
-              onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, ""))}
+              onChange={(e) =>
+                setVerificationCode(e.target.value.replace(/\D/g, ""))
+              }
               className="w-full rounded border border-cyan-500/40 bg-black/30 p-2 text-cyan-100 tracking-[0.3em] text-center"
               placeholder="000000"
             />
 
-            {codeMsg ? <p className="text-sm text-amber-300">{codeMsg}</p> : null}
+            {codeMsg ? (
+              <p className="text-sm text-amber-300">{codeMsg}</p>
+            ) : null}
             {isLocked ? (
-              <p className="text-sm text-amber-300">Bloqueado por intentos agotados.</p>
+              <p className="text-sm text-amber-300">
+                Bloqueado por intentos agotados.
+              </p>
             ) : null}
             {isExpired ? (
               <p className="text-sm text-amber-300">Codigo expirado.</p>

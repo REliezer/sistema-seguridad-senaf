@@ -5,6 +5,7 @@ import { BrowserRouter } from "react-router-dom";
 import App from "./App.jsx";
 import "./styles.css";
 import { LocalAuthProvider } from "./auth/local-auth-react.jsx";
+import { Toaster } from 'sonner'
 
 /**
  * Presets globales UI
@@ -22,6 +23,7 @@ import { LocalAuthProvider } from "./auth/local-auth-react.jsx";
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
+    <Toaster position="bottom-left" expand={true} richColors/>
     <BrowserRouter>
       <LocalAuthProvider>
         <App />
