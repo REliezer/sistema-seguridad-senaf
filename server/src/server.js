@@ -36,6 +36,9 @@ import visitasRoutes from "../modules/visitas/visitas.routes.js";
 // ✅ Chat
 import chatRoutes from "./routes/chat.routes.js";
 
+// ✅ System Parameters Seed
+import { seedSystemParameters } from "../modules/iam/utils/system-parameters.seed.js";
+
 // Cron
 import { startDailyAssignmentCron } from "./cron/assignments.cron.js";
 
@@ -197,6 +200,16 @@ await mongoose.connect(mongoUri, { autoIndex: true }).catch((e) => {
 });
 
 console.log("[db] MongoDB conectado");
+
+/* ─────────────────────── SYSTEM SEED ────────────────────────── */
+try {
+  console.log("[seed] Inicializando parámetros del sistema...");
+  await seedSystemParameters();
+  console.log("[seed] ✅ Parámetros del sistema inicializados");
+} catch (err) {
+  console.error("[seed] ⚠️  Error en seed de parámetros:", err?.message);
+  // No es fatal, continúa el servidor
+}
 
 /* ─────────────────── Auth opcional (GLOBAL) ────────────────────
    - Si llega Authorization Bearer y DISABLE_AUTH != 1 -> valida JWT

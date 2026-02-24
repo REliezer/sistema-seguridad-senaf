@@ -203,7 +203,7 @@ export async function createUser(req, res, next) {
     const plainPassword =
       password && String(password).trim()
         ? String(password)
-        : generateRandomPassword();
+        : await generateRandomPassword();
 
     // Obtener días de expiración de contraseña desde parámetros
     const passwordExpiryDays = await getParameterCached("password_expiry_days", 60);

@@ -62,8 +62,11 @@ function pickHome({ roles = [], perms = [], visitor = false }) {
   // Supervisor -> reportes
   if (R.has("supervisor")) return "/rondasqr/reports";
 
-  // Recepción -> visitas control
-  if (R.has("recepcion")) return "/visitas/control";
+  // Recepción -> control de accesos
+  if (R.has("recepcion")) return "/accesos";
+
+  // Visita -> control general de visitas
+  if (R.has("visita")) return "/visitas";
 
   return "/";
 }

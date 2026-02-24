@@ -11,6 +11,7 @@ import usersRoutes from "./routes/users.routes.js";
 import rolesRoutes from "./routes/roles.routes.js";
 import permissionsRoutes from "./routes/permissions.routes.js";
 import auditRoutes from "./routes/audit.routes.js";
+import systemParametersRoutes from "./routes/system-parameters.routes.js";
 
 import { parseExcelRolesPermissions, seedFromParsed } from "./utils/seed.util.js";
 
@@ -69,6 +70,7 @@ export async function registerIAMModule({
   router.use("/roles", authMw, rolesRoutes);
   router.use("/permissions", authMw, permissionsRoutes);
   router.use("/audit", authMw, auditRoutes);
+  router.use("/system-parameters", authMw, systemParametersRoutes);
 
   // Import Excel (solo dev) + recomendado: dev autenticado
   router.post(

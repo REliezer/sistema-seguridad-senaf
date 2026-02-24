@@ -1,8 +1,25 @@
 import { createHash } from "node:crypto";
 import nodemailer from "nodemailer";
+import { getParameterCached } from "./system.helpers.js";
 
 export const CODE_TTL_MS = 10 * 60 * 1000;
 export const CODE_MAX_ATTEMPTS = 3;
+
+/**
+ * Obtiene los intentos máximos de login desde parámetros
+ * @returns {Promise<number>}
+ */
+export async function getMaxLoginAttempts() {
+  return Number(await getParameterCached("max_login_attempts", 5)) || 5;
+}
+
+/**
+ * Obtiene la duración del bloqueo en minutos desde parámetros
+ * @returns {Promise<number>}
+ */
+export async function getLockDurationMinutes() {
+  return Number(await getParameterCached("lock_duration_minutes", 15)) || 15;
+}
 
 export function hashCode(code) {
   return createHash("sha256")

@@ -1,5 +1,6 @@
 // ESM module
 import bcrypt from "bcryptjs";
+import { getParameterCached } from "./system.helpers.js";
 
 /**
  * Hashea una contraseña con bcrypt (cost=10).
@@ -24,20 +25,32 @@ export async function verifyPassword(pwd, hash) {
 }
 
 /**
- * Helper de política sobre formato de contraseña: 
- * longitud mínima (12)
- * Minimo una mayúsculas
- * Minimo una minúscula
- * Minimo un número
- * Minimo un símbolo
+ * Helper de política sobre formato de contraseña (DINÁMICA desde system-parameters)
+ * Lee parámetros:
+ * - password_min_length (por defecto 12)
+ * - password_require_uppercase (por defecto true)
+ * - password_require_lowercase (por defecto true)
+ * - password_require_number (por defecto true)
+ * - password_require_symbol (por defecto true)
  */
-export function validatePasswordPolicy(pwd) {
+export async function validatePasswordPolicy(pwd) {
   const plain = String(pwd ?? "");
-  if (plain.length < 12) return false;
-  if (!/[A-Z]/.test(plain)) return false;
-  if (!/[a-z]/.test(plain)) return false;
-  if (!/[0-9]/.test(plain)) return false;
-  if (!/[^A-Za-z0-9]/.test(plain)) return false;
+  
+  // Obtener parámetros con caché
+  const minLength = await getParameterCached("password_min_length", 12);
+  const requireUppercase = await getParameterCached("password_require_uppercase", true);
+  const requireLowercase = await getParameterCached("password_require_lowercase", true);
+  const requireNumber = await getParameterCached("password_require_number", true);
+  const requireSymbol = await getParameterCached("password_require_symbol", true);
+
+  const minLengthNum = Number(minLength) || 12;
+
+  if (plain.length < minLengthNum) return false;
+  if (requireUppercase && !/[A-Z]/.test(plain)) return false;
+  if (requireLowercase && !/[a-z]/.test(plain)) return false;
+  if (requireNumber && !/[0-9]/.test(plain)) return false;
+  if (requireSymbol && !/[^A-Za-z0-9]/.test(plain)) return false;
+  
   return true;
 }
 
@@ -50,15 +63,24 @@ export function isPasswordExpired(expiresAt) {
 }
 
 /**
- * Genera una contraseña aleatoria que cumpla la política de seguridad:
- * - Mínimo 12 caracteres
- * - Al menos una mayúscula
- * - Al menos una minúscula
- * - Al menos un número
- * - Al menos un símbolo
- * @returns {string} Contraseña generada aleatoriamente
+ * Genera una contraseña aleatoria que cumpla la política de seguridad (DINÁMICA):
+ * - Mínimo password_min_length (por defecto 12) caracteres
+ * - Al menos una mayúscula (si password_require_uppercase es true)
+ * - Al menos una minúscula (si password_require_lowercase es true)
+ * - Al menos un número (si password_require_number es true)
+ * - Al menos un símbolo (si password_require_symbol es true)
+ * @returns {Promise<string>} Contraseña generada aleatoriamente
  */
-export function generateRandomPassword() {
+export async function generateRandomPassword() {
+  // Obtener parámetros con caché
+  const minLength = await getParameterCached("password_min_length", 12);
+  const requireUppercase = await getParameterCached("password_require_uppercase", true);
+  const requireLowercase = await getParameterCached("password_require_lowercase", true);
+  const requireNumber = await getParameterCached("password_require_number", true);
+  const requireSymbol = await getParameterCached("password_require_symbol", true);
+
+  const minLengthNum = Math.max(Number(minLength) || 12, 8);
+
   const uppercase = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
   const lowercase = "abcdefghijklmnopqrstuvwxyz";
   const numbers = "0123456789";
@@ -66,16 +88,16 @@ export function generateRandomPassword() {
 
   const allChars = uppercase + lowercase + numbers + symbols;
 
-  // Garantizar al menos uno de cada tipo
+  // Garantizar al menos uno de cada tipo requerido
   let password = "";
-  password += uppercase[Math.floor(Math.random() * uppercase.length)];
-  password += lowercase[Math.floor(Math.random() * lowercase.length)];
-  password += numbers[Math.floor(Math.random() * numbers.length)];
-  password += symbols[Math.floor(Math.random() * symbols.length)];
+  
+  if (requireUppercase) password += uppercase[Math.floor(Math.random() * uppercase.length)];
+  if (requireLowercase) password += lowercase[Math.floor(Math.random() * lowercase.length)];
+  if (requireNumber) password += numbers[Math.floor(Math.random() * numbers.length)];
+  if (requireSymbol) password += symbols[Math.floor(Math.random() * symbols.length)];
 
-  // Rellenar el resto hasta 12 caracteres con caracteres aleatorios
-  const minLength = 12;
-  while (password.length < minLength) {
+  // Rellenar hasta minLength caracteres con caracteres aleatorios
+  while (password.length < minLengthNum) {
     password += allChars[Math.floor(Math.random() * allChars.length)];
   }
 

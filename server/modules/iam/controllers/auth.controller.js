@@ -1,6 +1,7 @@
 import { buildContextFrom } from "../utils/rbac.util.js";
 import { randomInt } from "node:crypto";
 import IamUser from "../models/IamUser.model.js";
+import { getParameterCached } from "../utils/system.helpers.js";
 import {
   hashPassword,
   isPasswordExpired,
@@ -134,11 +135,11 @@ export const changePassword = async (req, res, next) => {
       });
     }
 
-    if (!validatePasswordPolicy(newPassword)) {
+    if (!(await validatePasswordPolicy(newPassword))) {
       return res.status(400).json({
         ok: false,
         error:
-          "La nueva contraseña no cumple la política (min 12, mayúscula, minúscula, número y símbolo)",
+          "La nueva contraseña no cumple la política. Verifica: longitud mínima, mayúsculas, minúsculas, números y símbolos.",
       });
     }
 
@@ -192,10 +193,13 @@ export const changePassword = async (req, res, next) => {
         .json({ ok: false, error: "La nueva contraseña debe ser distinta" });
     }
 
+    // Obtener días de expiración de contraseña desde parámetros
+    const passwordExpiryDays = await getParameterCached("password_expiry_days", 60);
+
     user.passwordHash = await hashPassword(newPassword);
     const now = new Date();
     user.passwordChangedAt = now;
-    user.passwordExpiresAt = addDays(now, 60);
+    user.passwordExpiresAt = addDays(now, passwordExpiryDays);
     user.mustChangePassword = false;
     user.passwordResetCodeHash = undefined;
     user.passwordResetCodeExpiresAt = undefined;
