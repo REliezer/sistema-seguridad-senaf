@@ -47,4 +47,44 @@ export function validatePasswordPolicy(pwd) {
 export function isPasswordExpired(expiresAt) {
   if (!expiresAt) return false; // si no hay fecha, no expira
   return new Date() > new Date(expiresAt);
-} 
+}
+
+/**
+ * Genera una contraseña aleatoria que cumpla la política de seguridad:
+ * - Mínimo 12 caracteres
+ * - Al menos una mayúscula
+ * - Al menos una minúscula
+ * - Al menos un número
+ * - Al menos un símbolo
+ * @returns {string} Contraseña generada aleatoriamente
+ */
+export function generateRandomPassword() {
+  const uppercase = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  const lowercase = "abcdefghijklmnopqrstuvwxyz";
+  const numbers = "0123456789";
+  const symbols = "!@#$%^&*()-_=+[]{}|;:,.<>?";
+
+  const allChars = uppercase + lowercase + numbers + symbols;
+
+  // Garantizar al menos uno de cada tipo
+  let password = "";
+  password += uppercase[Math.floor(Math.random() * uppercase.length)];
+  password += lowercase[Math.floor(Math.random() * lowercase.length)];
+  password += numbers[Math.floor(Math.random() * numbers.length)];
+  password += symbols[Math.floor(Math.random() * symbols.length)];
+
+  // Rellenar el resto hasta 12 caracteres con caracteres aleatorios
+  const minLength = 12;
+  while (password.length < minLength) {
+    password += allChars[Math.floor(Math.random() * allChars.length)];
+  }
+
+  // Mezclar la contraseña para que no siempre empiece con mayúscula
+  const passwordArray = password.split("");
+  for (let i = passwordArray.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [passwordArray[i], passwordArray[j]] = [passwordArray[j], passwordArray[i]];
+  }
+
+  return passwordArray.join("");
+}

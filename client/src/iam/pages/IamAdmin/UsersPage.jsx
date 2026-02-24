@@ -3,947 +3,19 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth0 } from "../../../auth/local-auth-react.jsx";
 import { iamApi } from "../../api/iamApi.js";
 import { Edit3, Trash2 } from "lucide-react";
-
-/* ===== Catálogos estáticos ===== */
-
-const ESTADOS_CIVILES = [
-  "Soltero/a",
-  "Casado/a",
-  "Divorciado/a",
-  "Viudo/a",
-  "Unión libre",
-];
-
-/* 🌎 Lista de países (en español) */
-const COUNTRIES = [
-  "Afganistán",
-  "Albania",
-  "Alemania",
-  "Andorra",
-  "Angola",
-  "Antigua y Barbuda",
-  "Arabia Saudita",
-  "Argelia",
-  "Argentina",
-  "Armenia",
-  "Australia",
-  "Austria",
-  "Azerbaiyán",
-  "Bahamas",
-  "Bangladés",
-  "Barbados",
-  "Baréin",
-  "Bélgica",
-  "Belice",
-  "Benín",
-  "Bielorrusia",
-  "Birmania (Myanmar)",
-  "Bolivia",
-  "Bosnia y Herzegovina",
-  "Botsuana",
-  "Brasil",
-  "Brunéi",
-  "Bulgaria",
-  "Burkina Faso",
-  "Burundi",
-  "Bután",
-  "Cabo Verde",
-  "Camboya",
-  "Camerún",
-  "Canadá",
-  "Catar",
-  "Chad",
-  "Chile",
-  "China",
-  "Chipre",
-  "Colombia",
-  "Comoras",
-  "Corea del Norte",
-  "Corea del Sur",
-  "Costa de Marfil",
-  "Costa Rica",
-  "Croacia",
-  "Cuba",
-  "Dinamarca",
-  "Dominica",
-  "Ecuador",
-  "Egipto",
-  "El Salvador",
-  "Emiratos Árabes Unidos",
-  "Eritrea",
-  "Eslovaquia",
-  "Eslovenia",
-  "España",
-  "Estados Unidos",
-  "Estonia",
-  "Esuatini",
-  "Etiopía",
-  "Fiyi",
-  "Filipinas",
-  "Finlandia",
-  "Francia",
-  "Gabón",
-  "Gambia",
-  "Georgia",
-  "Ghana",
-  "Granada",
-  "Grecia",
-  "Guatemala",
-  "Guinea",
-  "Guinea-Bisáu",
-  "Guinea Ecuatorial",
-  "Guyana",
-  "Haití",
-  "Honduras",
-  "Hungría",
-  "India",
-  "Indonesia",
-  "Irak",
-  "Irán",
-  "Irlanda",
-  "Islandia",
-  "Islas Marshall",
-  "Islas Salomón",
-  "Israel",
-  "Italia",
-  "Jamaica",
-  "Japón",
-  "Jordania",
-  "Kazajistán",
-  "Kenia",
-  "Kirguistán",
-  "Kiribati",
-  "Kuwait",
-  "Laos",
-  "Lesoto",
-  "Letonia",
-  "Líbano",
-  "Liberia",
-  "Libia",
-  "Liechtenstein",
-  "Lituania",
-  "Luxemburgo",
-  "Madagascar",
-  "Malasia",
-  "Malaui",
-  "Maldivas",
-  "Malí",
-  "Malta",
-  "Marruecos",
-  "Mauricio",
-  "Mauritania",
-  "México",
-  "Micronesia",
-  "Moldavia",
-  "Mónaco",
-  "Mongolia",
-  "Montenegro",
-  "Mozambique",
-  "Namibia",
-  "Nauru",
-  "Nepal",
-  "Nicaragua",
-  "Níger",
-  "Nigeria",
-  "Noruega",
-  "Nueva Zelanda",
-  "Omán",
-  "Países Bajos",
-  "Pakistán",
-  "Palaos",
-  "Panamá",
-  "Papúa Nueva Guinea",
-  "Paraguay",
-  "Perú",
-  "Polonia",
-  "Portugal",
-  "Reino Unido",
-  "República Centroafricana",
-  "República Checa",
-  "República del Congo",
-  "República Democrática del Congo",
-  "República Dominicana",
-  "Ruanda",
-  "Rumanía",
-  "Rusia",
-  "Samoa",
-  "San Cristóbal y Nieves",
-  "San Marino",
-  "San Vicente y las Granadinas",
-  "Santa Lucía",
-  "Santo Tomé y Príncipe",
-  "Senegal",
-  "Serbia",
-  "Seychelles",
-  "Sierra Leona",
-  "Singapur",
-  "Siria",
-  "Somalia",
-  "Sri Lanka",
-  "Sudáfrica",
-  "Sudán",
-  "Sudán del Sur",
-  "Suecia",
-  "Suiza",
-  "Surinam",
-  "Tailandia",
-  "Tanzania",
-  "Tayikistán",
-  "Timor Oriental",
-  "Togo",
-  "Tonga",
-  "Trinidad y Tobago",
-  "Túnez",
-  "Turkmenistán",
-  "Turquía",
-  "Tuvalu",
-  "Ucrania",
-  "Uganda",
-  "Uruguay",
-  "Uzbekistán",
-  "Vanuatu",
-  "Venezuela",
-  "Vietnam",
-  "Yemen",
-  "Yibuti",
-  "Zambia",
-  "Zimbabue",
-];
-
-/* Catálogo grande de profesiones y oficios */
-const PROFESIONES_OFICIOS = [
-  // Administración y oficina
-  "Administrador/a",
-  "Asistente administrativo/a",
-  "Secretaria/o",
-  "Recepcionista",
-  "Archivista",
-  "Oficinista",
-  "Gerente de Recursos Humanos",
-  "Gerente General",
-  "Supervisor/a",
-  // Contabilidad, finanzas y leyes
-  "Contador/a",
-  "Auxiliar contable",
-  "Auditor/a",
-  "Analista financiero",
-  "Cajero/a",
-  "Abogado/a",
-  "Notario/a",
-  "Juez / Jueza",
-  "Fiscal",
-  "Asesor/a legal",
-  // Salud
-  "Médico/a General",
-  "Médico/a Especialista",
-  "Cirujano/a",
-  "Odontólogo/a (Dentista)",
-  "Enfermero/a",
-  "Auxiliar de enfermería",
-  "Paramédico/a",
-  "Técnico/a en Laboratorio Clínico",
-  "Farmacéutico/a",
-  "Nutricionista",
-  "Fisioterapeuta",
-  "Psicólogo/a",
-  "Trabajador/a Social en Salud",
-  "Veterinario/a",
-  // Educación
-  "Docente de Prebásica",
-  "Docente de Educación Básica",
-  "Docente de Secundaria",
-  "Profesor/a Universitario/a",
-  "Tutor/a",
-  "Orientador/a Educativo/a",
-  "Pedagogo/a",
-  "Psicopedagogo/a",
-  // Tecnología e informática
-  "Ingeniero/a en Sistemas",
-  "Desarrollador/a de Software",
-  "Programador/a",
-  "Analista de Sistemas",
-  "Administrador/a de Bases de Datos",
-  "Administrador/a de Redes",
-  "Soporte Técnico",
-  "Técnico/a en Informática",
-  "Especialista en Ciberseguridad",
-  "Diseñador/a Web",
-  "Tester / QA",
-  // Ingeniería
-  "Ingeniero/a Civil",
-  "Ingeniero/a Industrial",
-  "Ingeniero/a Eléctrico",
-  "Ingeniero/a Mecánico",
-  "Ingeniero/a Electrónico",
-  "Ingeniero/a Agrónomo",
-  "Ingeniero/a Ambiental",
-  "Ingeniero/a Químico",
-  "Ingeniero/a en Telecomunicaciones",
-  // Seguridad y fuerzas del orden
-  "Guardia de Seguridad",
-  "Policía",
-  "Militar",
-  "Bombero/a",
-  "Inspector/a de Seguridad",
-  "Vigilante",
-  // Comercio y ventas
-  "Vendedor/a",
-  "Ejecutivo/a de Ventas",
-  "Representante Comercial",
-  "Mercadólogo/a",
-  "Promotor/a",
-  "Dependiente de tienda",
-  "Encargado/a de Bodega",
-  "Logístico/a",
-  // Construcción y oficios técnicos
-  "Albañil",
-  "Carpintero/a",
-  "Plomero / Fontanero",
-  "Electricista",
-  "Soldador/a",
-  "Pintor/a",
-  "Herrero/a",
-  "Yesero/a",
-  "Maestro de Obras",
-  "Topógrafo/a",
-  // Transporte
-  "Chofer",
-  "Taxista",
-  "Conductor de Bus",
-  "Conductor de Camión",
-  "Piloto",
-  "Ayudante de Transporte",
-  "Coordinador de Transporte",
-  // Servicios y atención al cliente
-  "Mesero/a",
-  "Cocinero/a",
-  "Chef",
-  "Barista",
-  "Bartender",
-  "Recepcionista de Hotel",
-  "Camarero/a de Hotel",
-  "Personal de Limpieza",
-  "Conserje",
-  "Estilista",
-  "Barbero",
-  "Manicurista / Pedicurista",
-  // Comunicación, arte y medios
-  "Periodista",
-  "Reportero/a",
-  "Locutor/a",
-  "Comunicador/a Social",
-  "Diseñador/a Gráfico",
-  "Fotógrafo/a",
-  "Camarógrafo/a",
-  "Editor/a de Video",
-  "Músico/a",
-  "Actor / Actriz",
-  "Productor/a Audiovisual",
-  // Campo, producción y otros
-  "Agricultor/a",
-  "Ganadero/a",
-  "Jornalero/a",
-  "Jardinero/a",
-  "Operador/a de Maquinaria",
-  "Obrero/a de Fábrica",
-  "Panadero/a",
-  "Carnicero/a",
-  "Empresario/a",
-  "Comerciante",
-  "Trabajador/a Independiente",
-  "Ama de Casa",
-  "Estudiante",
-  "Desempleado/a",
-  "Otro",
-];
+import { mapUserToFormSafe } from "../../../utils/userValidation.js";
+import { maritalStatuses as ESTADOS_CIVILES } from "../../../data/maritalStatuses.js";
+import RoleBadges from "../../../components/iam/RoleBadges.jsx";
+import RoleSelect from "../../../components/iam/RoleSelect.jsx";
+import CountrySelect from "../../../components/iam/CountrySelect.jsx";
+import ProfessionSelect from "../../../components/iam/ProfessionSelect.jsx";
+import BirthDatePicker from "../../../components/iam/BirthDatePicker.jsx";
+import { toast } from "sonner";
 
 // mismo flag que en iamApi.js, pero del lado del cliente
 const DISABLE_AUTH = import.meta.env.VITE_DISABLE_AUTH === "1";
 
-/* ===================== Helpers básicos ===================== */
-
-function getPath(obj, path) {
-  return path.split(".").reduce((o, k) => (o == null ? undefined : o[k]), obj);
-}
-function getVal(obj, paths, fallback = "") {
-  for (const p of paths) {
-    const v = p.includes(".") ? getPath(obj, p) : obj?.[p];
-    if (v !== undefined && v !== null && v !== "") return v;
-  }
-  return fallback;
-}
-function toDateInputSafe(value) {
-  if (!value) return "";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toISOString().slice(0, 10);
-}
-
-/** Parse "YYYY-MM-DD" a Date (sin problema de zona horaria) */
-function parseDateYMD(value) {
-  if (!value || typeof value !== "string") return null;
-  const parts = value.split("-");
-  if (parts.length !== 3) return null;
-  const [y, m, d] = parts.map((n) => parseInt(n, 10));
-  if (!y || !m || !d) return null;
-  return new Date(y, m - 1, d);
-}
-
-/** Formatea Date -> "YYYY-MM-DD" */
-function formatDateYMD(date) {
-  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return "";
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
-}
-
-/** Normaliza el objeto de backend a las claves del form */
-function mapUserToFormSafe(api = {}) {
-  const nombreFromParts =
-    [getVal(api, ["persona.nombres"], ""), getVal(api, ["persona.apellidos"], "")]
-      .join(" ")
-      .trim() || undefined;
-
-  const fechaRaw = getVal(api, [
-    "fechaNacimiento",
-    "fecha_nacimiento",
-    "birthDate",
-    "persona.fechaNacimiento",
-    "persona.fecha_nacimiento",
-    "persona.fnac",
-    "datosNacimiento.fecha",
-    "nacimiento.fecha",
-  ]);
-
-  let roles = getVal(api, ["roles", "persona.roles"], []);
-  if (typeof roles === "string") roles = [roles];
-  if (Array.isArray(roles)) {
-    roles = roles
-      .map((r) =>
-        typeof r === "string"
-          ? r
-          : r?.code || r?.name || r?.nombre || r?.key || ""
-      )
-      .filter(Boolean);
-  } else {
-    roles = [];
-  }
-
-  const active =
-    getVal(api, ["active", "persona.active"], undefined) ??
-    (getVal(api, ["estado"], "") === "activo"
-      ? true
-      : getVal(api, ["estado"], "") === "inactivo"
-      ? false
-      : true);
-
-  const civil = getVal(
-    api,
-    ["estadoCivil", "estado_civil", "civilStatus", "persona.estadoCivil"],
-    ""
-  );
-  const civilOk = ESTADOS_CIVILES.includes(civil) ? civil : "";
-
-  return {
-    // PERSONALES
-    nombreCompleto: getVal(
-      api,
-      ["nombreCompleto", "fullName", "name", "persona.nombreCompleto"],
-      nombreFromParts || ""
-    ),
-    tipoDni: getVal(api, ["tipoDni", "persona.tipoDni"], "Identidad"),
-    dni: getVal(
-      api,
-      [
-        "dni",
-        "documento",
-        "num_documento",
-        "numeroDocumento",
-        "persona.dni",
-        "persona.numeroDocumento",
-      ],
-      ""
-    ),
-    estadoCivil: civilOk,
-    fechaNacimiento: toDateInputSafe(fechaRaw),
-    paisNacimiento: getVal(
-      api,
-      [
-        "paisNacimiento",
-        "pais_nacimiento",
-        "countryOfBirth",
-        "persona.pais",
-        "datosNacimiento.pais",
-        "nacimiento.pais",
-      ],
-      ""
-    ),
-    ciudadNacimiento: getVal(
-      api,
-      [
-        "ciudadNacimiento",
-        "ciudad_nacimiento",
-        "cityOfBirth",
-        "persona.ciudad",
-        "datosNacimiento.ciudad",
-        "nacimiento.ciudad",
-      ],
-      ""
-    ),
-    municipioNacimiento: getVal(
-      api,
-      [
-        "municipioNacimiento",
-        "municipio",
-        "persona.municipio",
-        "datosNacimiento.municipio",
-        "nacimiento.municipio",
-        "ubicacion.municipio",
-      ],
-      ""
-    ),
-    correoPersona: getVal(
-      api,
-      [
-        "correoPersona",
-        "email",
-        "correo",
-        "mail",
-        "persona.correo",
-        "persona.email",
-      ],
-      ""
-    ),
-    profesion: getVal(api, ["profesion", "ocupacion", "persona.ocupacion"], ""),
-    lugarTrabajo: getVal(
-      api,
-      [
-        "lugarTrabajo",
-        "dondeLabora",
-        "empresa",
-        "persona.lugar_trabajo",
-        "persona.dondeLabora",
-      ],
-      ""
-    ),
-    telefono: getVal(
-      api,
-      [
-        "telefono",
-        "phone",
-        "celular",
-        "tel",
-        "telefono1",
-        "telefono2",
-        "persona.telefono",
-        "persona.celular",
-        "contacto.telefono",
-      ],
-      ""
-    ),
-    domicilio: getVal(
-      api,
-      [
-        "domicilio",
-        "direccion",
-        "address",
-        "direccionResidencia",
-        "persona.direccion",
-        "persona.domicilio",
-        "ubicacion.direccion",
-      ],
-      ""
-    ),
-    // IAM
-    roles,
-    active,
-    id_persona: getVal(api, ["id_persona", "persona.id_persona"], null),
-    _id: getVal(api, ["_id", "id", "persona._id"], undefined),
-  };
-}
-
-/* ====== UI helpers ====== */
-
-function RoleBadges({ roles = [], roleLabelMap = {} }) {
-  const labels = Array.isArray(roles)
-    ? roles.map((code) => roleLabelMap[code] || code)
-    : [];
-  return (
-    <div className="flex flex-wrap gap-1">
-      {labels.length === 0 ? (
-        <span className="text-neutral-500">—</span>
-      ) : (
-        labels.map((r, i) => (
-          <span
-            key={`${r}-${i}`}
-            className="text-xs px-2 py-1 rounded-full border border-cyan-400/40 bg-cyan-500/5 text-cyan-100"
-          >
-            {r}
-          </span>
-        ))
-      )}
-    </div>
-  );
-}
-
-function RoleSelect({ value = [], onChange, availableRoles = [] }) {
-  const [open, setOpen] = useState(false);
-
-  const selected = new Set(Array.isArray(value) ? value : []);
-  const normalizedRoles = useMemo(
-    () =>
-      (availableRoles || [])
-        .map((r) => ({
-          code: r.code || r.key || r.name || r._id,
-          label: r.name || r.label || r.code || r.key || r._id,
-        }))
-        .filter((r) => !!r.code),
-    [availableRoles]
-  );
-
-  const toggle = (code) => {
-    const copy = new Set(selected);
-    if (copy.has(code)) copy.delete(code);
-    else copy.add(code);
-    onChange(Array.from(copy));
-  };
-
-  const labelSelected =
-    normalizedRoles
-      .filter((r) => selected.has(r.code))
-      .map((r) => r.label)
-      .join(", ") || "Seleccionar rol(es)";
-
-  return (
-    <div className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="w-full px-3 py-2 rounded-lg border border-cyan-500/40 bg-slate-950/60 text-left text-sm shadow-inner flex items-center gap-2"
-      >
-        <span>{labelSelected}</span>
-        <span className="ml-auto text-xs opacity-70">▾</span>
-      </button>
-      {open && (
-        <div className="absolute z-10 mt-1 w-full max-h-60 overflow-auto rounded-xl border border-cyan-500/40 bg-slate-950/95 shadow-[0_0_25px_rgba(34,211,238,0.35)]">
-          {normalizedRoles.length === 0 && (
-            <div className="px-3 py-2 text-sm text-neutral-500">
-              No hay roles configurados.
-            </div>
-          )}
-          {normalizedRoles.map((r) => (
-            <label
-              key={r.code}
-              className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-cyan-500/10 cursor-pointer"
-            >
-              <input
-                type="checkbox"
-                className="scale-110 accent-cyan-500"
-                checked={selected.has(r.code)}
-                onChange={() => toggle(r.code)}
-              />
-              <span>{r.label}</span>
-            </label>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/** Selector de país */
-function CountrySelect({ label, name, value, onChange }) {
-  const [open, setOpen] = useState(false);
-  const selected = value || "";
-  const listRef = useRef(null);
-
-  const handleSelect = (val) => {
-    onChange(name, val);
-    setOpen(false);
-  };
-
-  const scrollList = (direction) => {
-    if (!listRef.current) return;
-    const delta = direction === "up" ? -120 : 120;
-    listRef.current.scrollBy({ top: delta, behavior: "smooth" });
-  };
-
-  return (
-    <div className="relative">
-      <label className="space-y-1 block">
-        <span className="text-sm text-neutral-200">{label}</span>
-        <button
-          type="button"
-          onClick={() => setOpen((o) => !o)}
-          className="w-full px-3 py-2 rounded-lg border border-cyan-500/40 bg-slate-950/50 text-sm flex items-center gap-2 shadow-inner"
-        >
-          <span className={selected ? "text-neutral-100" : "text-neutral-400"}>
-            {selected || "Seleccionar país"}
-          </span>
-          <span className="ml-auto text-xs opacity-70">▾</span>
-        </button>
-      </label>
-
-      {open && (
-        <div className="absolute z-40 mt-1 w-full rounded-xl border border-cyan-500/50 bg-slate-950/70 backdrop-blur-sm shadow-[0_0_25px_rgba(34,211,238,0.45)] flex">
-          <div ref={listRef} className="flex-1 max-h-56 overflow-y-auto">
-            {COUNTRIES.map((c) => (
-              <button
-                key={c}
-                type="button"
-                onClick={() => handleSelect(c)}
-                className={`w-full text-left px-3 py-2 text-sm hover:bg-cyan-500/15 ${
-                  selected === c
-                    ? "bg-cyan-500/20 text-cyan-100"
-                    : "text-neutral-100"
-                }`}
-              >
-                {c}
-              </button>
-            ))}
-          </div>
-
-          <div className="flex flex-col border-l border-cyan-500/40">
-            <button
-              type="button"
-              onClick={() => scrollList("up")}
-              className="flex-1 px-2 py-2 text-xs text-neutral-100 hover:bg-cyan-500/20"
-              title="Subir"
-            >
-              ▲
-            </button>
-            <button
-              type="button"
-              onClick={() => scrollList("down")}
-              className="flex-1 px-2 py-2 text-xs text-neutral-100 hover:bg-cyan-500/20 border-t border-cyan-500/40"
-              title="Bajar"
-            >
-              ▼
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/** Selector de profesión */
-function ProfessionSelect({ value, onChange }) {
-  const [open, setOpen] = useState(false);
-  const selected = value || "";
-  const listRef = useRef(null);
-
-  const handleSelect = (val) => {
-    onChange(val);
-    setTimeout(() => setOpen(false), 0);
-  };
-
-  const scrollList = (direction) => {
-    if (!listRef.current) return;
-    const delta = direction === "up" ? -120 : 120;
-    listRef.current.scrollBy({ top: delta, behavior: "smooth" });
-  };
-
-  return (
-    <div className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="w-full px-3 py-2 rounded-lg border border-cyan-500/40 bg-slate-950/60 text-sm flex items-center gap-2 shadow-inner"
-      >
-        <span className={selected ? "text-neutral-100" : "text-neutral-400"}>
-          {selected || "Seleccionar profesión u oficio"}
-        </span>
-        <span className="ml-auto text-xs opacity-70">▾</span>
-      </button>
-
-      {open && (
-        <div className="absolute z-30 mt-1 w-full rounded-xl border border-cyan-500/50 bg-slate-950/95 shadow-[0_0_25px_rgba(34,211,238,0.45)] flex">
-          <div ref={listRef} className="flex-1 max-h-56 overflow-y-auto">
-            {PROFESIONES_OFICIOS.map((p) => (
-              <button
-                key={p}
-                type="button"
-                onClick={() => handleSelect(p)}
-                className={`w-full text-left px-3 py-2 text-sm hover:bg-cyan-500/15 ${
-                  selected === p
-                    ? "bg-cyan-500/20 text-cyan-100"
-                    : "text-neutral-100"
-                }`}
-              >
-                {p}
-              </button>
-            ))}
-          </div>
-
-          <div className="flex flex-col border-l border-cyan-500/40">
-            <button
-              type="button"
-              onClick={() => scrollList("up")}
-              className="flex-1 px-2 py-2 text-xs text-neutral-100 hover:bg-cyan-500/20"
-              title="Subir"
-            >
-              ▲
-            </button>
-            <button
-              type="button"
-              onClick={() => scrollList("down")}
-              className="flex-1 px-2 py-2 text-xs text-neutral-100 hover:bg-cyan-500/20 border-t border-cyan-500/40"
-              title="Bajar"
-            >
-              ▼
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/** Calendario para fecha de nacimiento */
-function BirthDatePicker({ label, name, value, onChange }) {
-  const [open, setOpen] = useState(false);
-  const parsed = value ? parseDateYMD(value) || new Date() : new Date();
-  const [viewDate, setViewDate] = useState(parsed);
-
-  const selectedDate = value ? parseDateYMD(value) : null;
-
-  const months = [
-    "Enero",
-    "Febrero",
-    "Marzo",
-    "Abril",
-    "Mayo",
-    "Junio",
-    "Julio",
-    "Agosto",
-    "Septiembre",
-    "Octubre",
-    "Noviembre",
-    "Diciembre",
-  ];
-  const daysShort = ["D", "L", "M", "M", "J", "V", "S"];
-
-  const year = viewDate.getFullYear();
-  const month = viewDate.getMonth();
-
-  const firstDayOfMonth = new Date(year, month, 1);
-  const startWeekday = firstDayOfMonth.getDay();
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-
-  const cells = [];
-  for (let i = 0; i < startWeekday; i++) cells.push(null);
-  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
-  while (cells.length % 7 !== 0) cells.push(null);
-
-  const handleSelectDay = (day) => {
-    if (!day) return;
-    const d = new Date(year, month, day);
-    const ymd = formatDateYMD(d);
-    onChange(name, ymd);
-    setOpen(false);
-  };
-
-  const goMonth = (delta) => {
-    setViewDate((prev) => {
-      const d = new Date(prev);
-      d.setMonth(d.getMonth() + delta);
-      return d;
-    });
-  };
-
-  return (
-    <div className="relative">
-      <label className="space-y-1 block">
-        <span className="text-sm text-neutral-200">{label}</span>
-        <button
-          type="button"
-          onClick={() => setOpen((o) => !o)}
-          className="w-full px-3 py-2 rounded-lg border border-cyan-500/40 bg-slate-950/70 text-sm flex items-center gap-2 shadow-inner"
-        >
-          <span className={value ? "text-neutral-100" : "text-neutral-400"}>
-            {value || "Seleccionar fecha"}
-          </span>
-          <span className="ml-auto text-xs opacity-70">📅</span>
-        </button>
-      </label>
-
-      {open && (
-        <div className="absolute z-40 mt-1 w-72 rounded-xl border border-cyan-500/60 bg-slate-950/95 backdrop-blur-sm shadow-[0_0_25px_rgba(34,211,238,0.55)] p-3">
-          <div className="flex items-center justify-between mb-2 text-sm text-neutral-100">
-            <button
-              type="button"
-              onClick={() => goMonth(-1)}
-              className="px-2 py-1 rounded-md border border-cyan-500/40 hover:bg-cyan-500/15 text-xs"
-            >
-              ◀
-            </button>
-            <div className="font-medium">
-              {months[month]} {year}
-            </div>
-            <button
-              type="button"
-              onClick={() => goMonth(1)}
-              className="px-2 py-1 rounded-md border border-cyan-500/40 hover:bg-cyan-500/15 text-xs"
-            >
-              ▶
-            </button>
-          </div>
-
-          <div className="grid grid-cols-7 text-[11px] text-center text-neutral-300 mb-1">
-            {daysShort.map((d) => (
-              <div key={d} className="py-1">
-                {d}
-              </div>
-            ))}
-          </div>
-
-          <div className="grid grid-cols-7 gap-1 text-sm">
-            {cells.map((day, idx) => {
-              if (!day) return <div key={idx} className="h-8" />;
-              const isSelected =
-                selectedDate &&
-                selectedDate.getFullYear() === year &&
-                selectedDate.getMonth() === month &&
-                selectedDate.getDate() === day;
-
-              return (
-                <button
-                  key={idx}
-                  type="button"
-                  onClick={() => handleSelectDay(day)}
-                  className={`h-8 w-8 rounded-full flex items-center justify-center text-xs ${
-                    isSelected
-                      ? "bg-cyan-500 text-slate-950 font-semibold"
-                      : "text-neutral-100 hover:bg-cyan-500/20"
-                  }`}
-                >
-                  {day}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* Reglas para validar password */
-function passwordRules(p = "") {
-  return {
-    length: p.length >= 8,
-    upper: /[A-Z]/.test(p),
-    lower: /[a-z]/.test(p),
-    digit: /\d/.test(p),
-  };
-}
-
-/* ===================== Página principal ===================== */
-
 export default function UsersPage() {
-  // 🔐 Auth0
   const { isAuthenticated, getAccessTokenSilently } = useAuth0();
 
   const [items, setItems] = useState([]);
@@ -977,18 +49,6 @@ export default function UsersPage() {
   const [form, setForm] = useState(empty);
   const [editing, setEditing] = useState(null);
 
-  const [creds, setCreds] = useState({
-    password: "",
-    confirm: "",
-    sendVerification: false,
-  });
-  const [showPwd, setShowPwd] = useState(false);
-
-  const pwdR = passwordRules(creds.password);
-  const match =
-    creds.password && creds.confirm && creds.password === creds.confirm;
-  const showPwdRules = creds.password && creds.password.length > 0;
-
   const firstFieldRef = useRef(null);
   const tokenRef = useRef(null);
   const [submitting, setSubmitting] = useState(false);
@@ -999,9 +59,9 @@ export default function UsersPage() {
         (roleCatalog || []).map((r) => [
           r.code || r.key || r.name || r._id,
           r.name || r.label || r.code || r.key || "(sin nombre)",
-        ])
+        ]),
       ),
-    [roleCatalog]
+    [roleCatalog],
   );
 
   // 👉 helper centralizado para obtener el token
@@ -1030,7 +90,7 @@ export default function UsersPage() {
 
       if (!DISABLE_AUTH && !token) {
         setErr(
-          "No se pudo obtener token de sesión. Inicia sesión de nuevo para gestionar usuarios."
+          "No se pudo obtener token de sesión. Inicia sesión de nuevo para gestionar usuarios.",
         );
         setItems([]);
         setRoleCatalog([]);
@@ -1042,7 +102,13 @@ export default function UsersPage() {
         iamApi.listRoles ? iamApi.listRoles(token) : Promise.resolve({}),
       ]);
 
-      setItems(resUsers.items || []);
+      const users = Array.isArray(resUsers.items) ? [...resUsers.items] : [];
+      users.sort((a, b) => {
+        const aDate = new Date(a?.createdAt || a?.updatedAt || 0).getTime();
+        const bDate = new Date(b?.createdAt || b?.updatedAt || 0).getTime();
+        return bDate - aDate;
+      });
+      setItems(users);
 
       const rolesRaw = resRoles?.items || resRoles?.roles || [];
       setRoleCatalog(Array.isArray(rolesRaw) ? rolesRaw : []);
@@ -1051,9 +117,13 @@ export default function UsersPage() {
       if (st === 401) {
         setErr("Sesión vencida o inválida. Inicia sesión nuevamente.");
       } else if (st === 403) {
-        setErr("No tienes permisos para listar el catálogo de roles en producción.");
+        setErr(
+          "No tienes permisos para listar el catálogo de roles en producción.",
+        );
       } else if (st >= 500) {
-        setErr("Error del servidor al cargar roles/usuarios. Intenta de nuevo en unos minutos.");
+        setErr(
+          "Error del servidor al cargar roles/usuarios. Intenta de nuevo en unos minutos.",
+        );
       } else {
         setErr(e?.message || "Error al cargar usuarios");
       }
@@ -1076,15 +146,14 @@ export default function UsersPage() {
     const t = q.trim().toLowerCase();
     let res = items;
     if (t) {
-      res = res.filter((u) =>
-        (u.nombreCompleto || u.name || "")
-          .toLowerCase()
-          .includes(t) ||
-        (u.correoPersona || u.email || "")
-          .toLowerCase()
-          .includes(t) ||
-        (u.dni || "").toLowerCase().includes(t) ||
-        String(u.id_persona || "").toLowerCase().includes(t)
+      res = res.filter(
+        (u) =>
+          (u.nombreCompleto || u.name || "").toLowerCase().includes(t) ||
+          (u.correoPersona || u.email || "").toLowerCase().includes(t) ||
+          (u.dni || "").toLowerCase().includes(t) ||
+          String(u.id_persona || "")
+            .toLowerCase()
+            .includes(t),
       );
     }
     if (onlyActive) res = res.filter((u) => u.active !== false);
@@ -1103,24 +172,21 @@ export default function UsersPage() {
     else if (!/^\S+@\S+\.\S+$/.test(form.correoPersona))
       v.correoPersona = "Correo inválido";
 
-    if (!Array.isArray(form.roles) || form.roles.length === 0) {
-      v.roles = "Seleccione al menos un rol";
+    if (form.fechaNacimiento) {
+      const today = new Date().toISOString().split("T")[0];
+      if (form.fechaNacimiento === today) {
+        v.fechaNacimiento = "La fecha de nacimiento no puede ser hoy";
+      }
     }
 
-    if (creds.password || creds.confirm) {
-      if (!creds.password) v.password = "Debe ingresar contraseña";
-      if (!creds.confirm) v.confirm = "Debe confirmar la contraseña";
-      if (creds.password !== creds.confirm)
-        v.confirm = "Las contraseñas no coinciden";
-      if (!pwdR.length || !pwdR.upper || !pwdR.lower || !pwdR.digit) {
-        v.password = "La contraseña no cumple los requisitos mínimos";
-      }
+    if (!Array.isArray(form.roles) || form.roles.length === 0) {
+      v.roles = "Seleccione al menos un rol";
     }
 
     return v;
   }
 
-  async function triggerVerification(userId, email) {
+  async function sendDataUserEmail(userId, email) {
     if (!/^\S+@\S+\.\S+$/.test(email || ""))
       throw new Error("Correo inválido para verificación");
 
@@ -1147,7 +213,23 @@ export default function UsersPage() {
       const firstKey = keys[0];
       const el = document.querySelector(`[name="${firstKey}"]`);
       if (el?.focus) el.focus();
-      alert("Corrija los errores del formulario antes de guardar.");
+
+      // Construir mensaje detallado de errores por campo
+      const humanize = (k) => {
+        const map = {
+          nombreCompleto: "Nombre completo",
+          dni: "Número",
+          correoPersona: "Correo",
+          roles: "Roles",
+        };
+        if (map[k]) return map[k];
+        return String(k)
+          .replace(/([A-Z])/g, " $1")
+          .replace(/^./, (s) => s.toUpperCase());
+      };
+
+      const messages = keys.map((k) => `${humanize(k)}: ${v[k]}`).join("\n");
+      toast.info("Corrija los siguientes errores:\n" + messages);
       return;
     }
 
@@ -1156,18 +238,17 @@ export default function UsersPage() {
 
       const token = await getToken();
       if (!DISABLE_AUTH && !token) {
-        alert(
-          "No se pudo obtener token de sesión. Inicia sesión nuevamente para guardar."
+        toast.warning(
+          "No se pudo obtener token de sesión. Inicia sesión nuevamente para guardar.",
         );
         return;
       }
 
       const payload = { ...form };
-      if (creds.password) payload.password = creds.password;
-      payload.sendVerification = !!creds.sendVerification;
 
       let res;
       let savedId = editing;
+      let emailSent = true;
 
       if (editing) {
         res = await iamApi.updateUser(editing, payload, token);
@@ -1178,7 +259,7 @@ export default function UsersPage() {
           res?.data?._id ||
           res?.data?.item?._id ||
           savedId;
-        alert("Usuario actualizado correctamente");
+        toast.success("Usuario actualizado correctamente");
       } else {
         res = await iamApi.createUser(payload, token);
         savedId =
@@ -1187,31 +268,35 @@ export default function UsersPage() {
           res?.userId ||
           res?.data?._id ||
           res?.data?.item?._id;
-        alert("Usuario creado correctamente ✅");
+        emailSent = !!(res?.emailSent ?? res?.data?.emailSent);
+        if (emailSent) {
+          toast.success("Usuario creado y correo enviado.");
+        } else {
+          toast.warning("Usuario creado, pero no se pudo enviar el correo.");
+        }
       }
 
-      if (creds.sendVerification && savedId && form.correoPersona) {
+      if (savedId && form.correoPersona && emailSent) {
         try {
-          await triggerVerification(savedId, form.correoPersona);
-          alert(
-            "Se envió el correo de verificación a " + form.correoPersona
-          );
+          await sendDataUserEmail(savedId, form.correoPersona);
+          toast.success("Se envió el correo de verificación a " + form.correoPersona);
         } catch (ev) {
           console.warn("[UsersPage] verificación no enviada:", ev);
-          alert(
-            "⚠️ No se pudo enviar la verificación: " +
-              (ev?.message || "revisa el backend")
+          toast.error(
+            "No se pudo enviar la verificación: " +
+              (ev?.message || "revisa el backend"),
           );
         }
       }
 
-      setForm(empty);
-      setEditing(null);
-      setCreds({ password: "", confirm: "", sendVerification: false });
-      setErrors({});
+      if (editing || emailSent) {
+        setForm(empty);
+        setEditing(null);
+        setErrors({});
+      }
       await load();
     } catch (e2) {
-      alert("⚠️ Error al guardar: " + (e2?.message || "Revisa la consola"));
+      toast.error(e2?.message);
       console.error("[UsersPage] submit error:", e2);
     } finally {
       setSubmitting(false);
@@ -1223,8 +308,8 @@ export default function UsersPage() {
       const token = await getToken();
 
       if (!DISABLE_AUTH && !token) {
-        alert(
-          "No se pudo obtener token de sesión. Inicia sesión nuevamente para cambiar estado."
+        toast.warning(
+          "No se pudo obtener token de sesión. Inicia sesión nuevamente para cambiar estado.",
         );
         return;
       }
@@ -1234,14 +319,13 @@ export default function UsersPage() {
 
       await load();
     } catch (e) {
-      alert(e?.message || "No se pudo cambiar el estado");
+      toast.warning(e?.message || "No se pudo cambiar el estado");
     }
   }
 
   async function startEdit(u) {
     console.log("[UsersPage] entrar a edición:", u);
     setEditing(u._id);
-    setCreds({ password: "", confirm: "", sendVerification: false });
 
     window.scrollTo({
       top: 0,
@@ -1274,7 +358,7 @@ export default function UsersPage() {
     } catch (e) {
       console.warn(
         "[UsersPage] no se pudo obtener detalle; usando item de lista:",
-        e
+        e,
       );
     } finally {
       setLoading(false);
@@ -1298,7 +382,6 @@ export default function UsersPage() {
   function cancelEdit() {
     setEditing(null);
     setForm(empty);
-    setCreds({ password: "", confirm: "", sendVerification: false });
     setErrors({});
     setTimeout(() => firstFieldRef.current?.focus?.(), 300);
   }
@@ -1307,7 +390,7 @@ export default function UsersPage() {
     const ok = window.confirm(
       `¿Seguro que deseas eliminar al usuario "${
         u.nombreCompleto || u.name || ""
-      }"?`
+      }"?`,
     );
     if (!ok) return;
 
@@ -1315,8 +398,8 @@ export default function UsersPage() {
       const token = await getToken();
 
       if (!DISABLE_AUTH && !token) {
-        alert(
-          "No se pudo obtener token de sesión. Inicia sesión nuevamente para eliminar."
+        toast.warning(
+          "No se pudo obtener token de sesión. Inicia sesión nuevamente para eliminar.",
         );
         return;
       }
@@ -1329,23 +412,23 @@ export default function UsersPage() {
 
       if (editing === u._id) cancelEdit();
       await load();
-      alert("Usuario eliminado correctamente.");
+      toast.success("Usuario eliminado correctamente.");
     } catch (e) {
-      alert(e?.message || "No se pudo eliminar el usuario");
+      toast.error(e?.message || "No se pudo eliminar el usuario");
     }
   }
 
   const visibleList = filteredAll.slice(0, visibleCount);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#020617] via-[#020617] to-black text-white p-6 md:p-8 space-y-8">
+    <div className="min-h-screen bg-linear-to-br from-[#020617] via-[#020617] to-black text-white p-6 md:p-8 space-y-8">
       <header className="max-w-5xl mx-auto">
         <h1 className="text-2xl md:text-3xl font-semibold mb-2">
           Administración de Usuarios (IAM)
         </h1>
         <p className="text-sm text-neutral-400 max-w-2xl">
-          Crea, edita y administra los usuarios del sistema SENAF, incluyendo sus
-          datos personales y roles de acceso.
+          Crea, edita y administra los usuarios del sistema SENAF, incluyendo
+          sus datos personales y roles de acceso.
         </p>
       </header>
 
@@ -1360,11 +443,6 @@ export default function UsersPage() {
             onClick={() => {
               setEditing(null);
               setForm(empty);
-              setCreds({
-                password: "",
-                confirm: "",
-                sendVerification: false,
-              });
               setErrors({});
             }}
             className="text-xs md:text-sm px-3 py-1.5 rounded-lg border border-cyan-500/60 hover:bg-cyan-500/10 transition-colors"
@@ -1395,9 +473,7 @@ export default function UsersPage() {
                 placeholder="Ej. Juan Pérez"
               />
               {errors.nombreCompleto && (
-                <p className="text-xs text-red-400">
-                  {errors.nombreCompleto}
-                </p>
+                <p className="text-xs text-red-400">{errors.nombreCompleto}</p>
               )}
             </div>
 
@@ -1470,9 +546,7 @@ export default function UsersPage() {
               <input
                 name="ciudadNacimiento"
                 value={form.ciudadNacimiento}
-                onChange={(e) =>
-                  setField("ciudadNacimiento", e.target.value)
-                }
+                onChange={(e) => setField("ciudadNacimiento", e.target.value)}
                 className="w-full px-3 py-2 rounded-lg bg-slate-950/60 border border-cyan-500/30 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500/60"
               />
             </div>
@@ -1506,9 +580,7 @@ export default function UsersPage() {
                 placeholder="usuario@dominio.com"
               />
               {errors.correoPersona && (
-                <p className="text-xs text-red-400">
-                  {errors.correoPersona}
-                </p>
+                <p className="text-xs text-red-400">{errors.correoPersona}</p>
               )}
             </div>
 
@@ -1593,158 +665,6 @@ export default function UsersPage() {
             </div>
           </div>
 
-          {/* Contraseña y verificación */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
-            <div className="space-y-1">
-              <label className="text-sm text-neutral-200">
-                Contraseña
-                {!editing && (
-                  <span className="text-xs text-cyan-300 ml-2">
-                    (solo al crear o cambiar)
-                  </span>
-                )}
-              </label>
-              <div className="flex items-center gap-2">
-                <input
-                  type={showPwd ? "text" : "password"}
-                  value={creds.password}
-                  onChange={(e) =>
-                    setCreds((prev) => ({
-                      ...prev,
-                      password: e.target.value,
-                    }))
-                  }
-                  className="w-full px-3 py-2 rounded-lg bg-slate-950/60 border border-cyan-500/30 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500/60"
-                  placeholder="••••••••"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPwd((s) => !s)}
-                  className="px-2 py-1 text-xs rounded-md border border-cyan-500/40 hover:bg-cyan-500/10"
-                >
-                  {showPwd ? "Ocultar" : "Ver"}
-                </button>
-              </div>
-              {errors.password && (
-                <p className="text-xs text-red-400">{errors.password}</p>
-              )}
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-sm text-neutral-200">
-                Confirmar contraseña
-              </label>
-              <input
-                type={showPwd ? "text" : "password"}
-                className="w-full px-3 py-2 rounded-lg bg-slate-950/60 border border-cyan-500/30 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500/60"
-                value={creds.confirm}
-                onChange={(e) =>
-                  setCreds((prev) => ({
-                    ...prev,
-                    confirm: e.target.value,
-                  }))
-                }
-                placeholder="••••••••"
-              />
-              {errors.confirm && (
-                <span className="text-xs text-red-500">
-                  {errors.confirm}
-                </span>
-              )}
-              {!errors.confirm && creds.confirm && !match && (
-                <span className="text-xs text-red-500">
-                  No coincide con la contraseña.
-                </span>
-              )}
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-sm text-neutral-200">Verificación</label>
-              <label className="flex items-center gap-2 text-xs text-neutral-300">
-                <input
-                  type="checkbox"
-                  checked={creds.sendVerification}
-                  onChange={async (e) => {
-                    const checked = e.target.checked;
-                    setCreds((prev) => ({
-                      ...prev,
-                      sendVerification: checked,
-                    }));
-                    // opción de enviar inmediato cuando se marca en edición
-                    if (
-                      checked &&
-                      editing &&
-                      /^\S+@\S+\.\S+$/.test(form.correoPersona || "")
-                    ) {
-                      try {
-                        setSubmitting(true);
-                        await triggerVerification(editing, form.correoPersona);
-                        alert(
-                          "Se envió el correo de verificación a " +
-                            form.correoPersona
-                        );
-                      } catch (ev) {
-                        console.warn(
-                          "[UsersPage] verificación inmediata falló:",
-                          ev
-                        );
-                        alert(
-                          "⚠️ No se pudo enviar verificación ahora: " +
-                            (ev?.message ||
-                              "se intentará al guardar, si está habilitado")
-                        );
-                      } finally {
-                        setSubmitting(false);
-                      }
-                    }
-                  }}
-                />
-                Enviar correo de verificación al guardar
-              </label>
-            </div>
-          </div>
-
-          {showPwdRules && (
-            <div className="text-xs text-neutral-300 bg-slate-900/70 border border-cyan-500/30 rounded-lg px-3 py-2 space-y-1">
-              <div className="font-semibold text-cyan-300 mb-1">
-                Requisitos de contraseña:
-              </div>
-              <div>
-                <span
-                  className={pwdR.length ? "text-green-400" : "text-red-400"}
-                >
-                  • Al menos 8 caracteres
-                </span>
-              </div>
-              <div>
-                <span
-                  className={pwdR.upper ? "text-green-400" : "text-red-400"}
-                >
-                  • Una letra mayúscula
-                </span>
-              </div>
-              <div>
-                <span
-                  className={pwdR.lower ? "text-green-400" : "text-red-400"}
-                >
-                  • Una letra minúscula
-                </span>
-              </div>
-              <div>
-                <span
-                  className={pwdR.digit ? "text-green-400" : "text-red-400"}
-                >
-                  • Un número
-                </span>
-              </div>
-              <div>
-                <span className={match ? "text-green-400" : "text-red-400"}>
-                  • Coincidencia entre contraseña y confirmación
-                </span>
-              </div>
-            </div>
-          )}
-
           <div className="flex justify-end gap-3 pt-2">
             <button
               type="button"
@@ -1761,8 +681,8 @@ export default function UsersPage() {
               {submitting
                 ? "Guardando..."
                 : editing
-                ? "Guardar cambios"
-                : "Crear usuario"}
+                  ? "Guardar cambios"
+                  : "Crear usuario"}
             </button>
           </div>
         </form>
@@ -1772,9 +692,7 @@ export default function UsersPage() {
       <section className="max-w-6xl mx-auto space-y-4">
         <div className="flex flex-col md:flex-row gap-3 justify-between items-start">
           <div>
-            <h2 className="text-lg font-semibold mb-1">
-              Usuarios registrados
-            </h2>
+            <h2 className="text-lg font-semibold mb-1">Usuarios registrados</h2>
             <p className="text-xs text-neutral-400">
               {filteredAll.length} usuario(s) encontrados
             </p>
@@ -1852,10 +770,7 @@ export default function UsersPage() {
                       {u.correoPersona || u.email || "—"}
                     </td>
                     <td className="px-4 py-3">
-                      <RoleBadges
-                        roles={u.roles}
-                        roleLabelMap={roleLabelMap}
-                      />
+                      <RoleBadges roles={u.roles} roleLabelMap={roleLabelMap} />
                     </td>
                     <td className="px-4 py-3 text-center">
                       <span

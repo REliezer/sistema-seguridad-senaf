@@ -1,12 +1,16 @@
 import IamUser from "../models/IamUser.model.js";
-import { hashPassword } from "../utils/password.util.js";
+import {
+  hashPassword,
+  generateRandomPassword,
+} from "../utils/password.util.js";
 import { writeAudit } from "../utils/audit.util.js";
+import { getParameterCached } from "../utils/system.helpers.js";
 import {
   addDays,
   isGuardRole,
-  nameFromEmail,
   normBool,
   normEmail,
+  sendDataUserRegister,
   toStringArray,
 } from "../utils/users.helpers.js";
 
@@ -78,7 +82,7 @@ export async function listGuardsPicker(req, res, next) {
       .filter((u) => isGuardRole(u))
       .map((u) => ({
         _id: u._id,
-        name: u.name || nameFromEmail(u.email) || "(Sin nombre)",
+        name: u.name || "(Sin nombre)",
         email: u.email || "",
         opId: u.externalId || String(u._id),
         active: !!u.active,
@@ -121,7 +125,7 @@ export async function listGuards(req, res, next) {
     const items = raw
       .map((u) => ({
         _id: u._id,
-        name: u.name || nameFromEmail(u.email) || "(Sin nombre)",
+        name: u.name || "(Sin nombre)",
         email: u.email || "",
         active: !!u.active,
         roles: u.roles || [],
@@ -140,7 +144,8 @@ export async function getUserById(req, res, next) {
   try {
     const { id } = req.params;
     const item = await IamUser.findById(id).lean();
-    if (!item) return res.status(404).json({ ok: false, error: "No encontrado" });
+    if (!item)
+      return res.status(404).json({ ok: false, error: "No encontrado" });
     return res.json({ ok: true, item });
   } catch (err) {
     return next(err);
@@ -160,15 +165,33 @@ export async function createUser(req, res, next) {
       externalId,
     } = req.body || {};
 
+    // Normalizar email
     email = normEmail(email);
-    if (!email) return res.status(400).json({ ok: false, error: "email requerido" });
+    if (!email)
+      return res
+        .status(400)
+        .json({ ok: false, error: "Correo electrónico requerido" });
 
+    // Validar que el nombre es obligatorio
+    name = String(name || "").trim();
+    if (!name)
+      return res.status(400).json({ ok: false, error: "Nombre requerido" });
+
+    // Verificar que el email no exista
     const exists = await IamUser.findOne({ email }).lean();
-    if (exists) return res.status(409).json({ ok: false, error: "ya existe", item: exists });
+    if (exists)
+      return res
+        .status(409)
+        .json({
+          ok: false,
+          error: "El correo electrónico ingresado ya existe.",
+          item: exists,
+        });
 
-    const doc = {
+    // Validar y normalizar datos
+    const normalizedData = {
       email,
-      name: String(name || "").trim() || nameFromEmail(email),
+      name,
       roles: toStringArray(roles),
       perms: toStringArray(perms),
       active: normBool(active, true),
@@ -176,17 +199,35 @@ export async function createUser(req, res, next) {
       externalId: externalId ? String(externalId).trim() : undefined,
     };
 
-    if (password && String(password).trim()) {
-      const now = new Date();
-      doc.passwordHash = await hashPassword(String(password));
-      doc.provider = "local";
-      doc.passwordChangedAt = now;
-      doc.passwordExpiresAt = addDays(now, 60);
-      doc.mustChangePassword = true;
-    }
+    // Generar contraseña aleatoria si no se proporciona
+    const plainPassword =
+      password && String(password).trim()
+        ? String(password)
+        : generateRandomPassword();
 
+    // Obtener días de expiración de contraseña desde parámetros
+    const passwordExpiryDays = await getParameterCached("password_expiry_days", 60);
+
+    // Preparar datos del usuario con contraseña
+    const userDataWithPassword = {
+      ...normalizedData,
+      plainPassword, // Mantener contraseña en texto plano para compartir con otras funciones
+    };
+
+    // Preparar documento para guardar en BD
+    const doc = {
+      ...normalizedData,
+      passwordHash: await hashPassword(plainPassword),
+      provider: "local",
+      passwordChangedAt: new Date(),
+      passwordExpiresAt: addDays(new Date(), passwordExpiryDays),
+      mustChangePassword: true,
+    };
+
+    // Guardar en base de datos
     const item = await IamUser.create(doc);
 
+    // Registrar auditoría
     await writeAudit(req, {
       action: "create",
       entity: "user",
@@ -200,6 +241,31 @@ export async function createUser(req, res, next) {
       },
     });
 
+    let emailSent = false;
+    let emailError = null;
+    try {
+      const fechaRegistro = item.createdAt
+        ? new Date(item.createdAt).toLocaleString("es-HN")
+        : new Date().toLocaleString("es-HN");
+      const rolesText = Array.isArray(normalizedData.roles)
+        ? normalizedData.roles.join(", ")
+        : String(normalizedData.roles || "");
+
+      const emailResult = await sendDataUserRegister({
+        nombre: item.name,
+        email: item.email,
+        password: plainPassword,
+        fechaRegistro,
+        roles: rolesText,
+      });
+      emailSent = !!emailResult?.success;
+      emailError = emailResult?.error || null;
+    } catch (err) {
+      emailSent = false;
+      emailError = err?.message || "No se pudo enviar el correo";
+    }
+
+    // Responder con usuario creado (sin incluir contraseña)
     return res.status(201).json({
       ok: true,
       item: {
@@ -214,6 +280,10 @@ export async function createUser(req, res, next) {
         createdAt: item.createdAt,
         updatedAt: item.updatedAt,
       },
+      // Devolver datos preparados para que pueda ser compartido con otras funciones
+      userData: userDataWithPassword,
+      emailSent,
+      emailError,
     });
   } catch (err) {
     return next(err);
@@ -231,13 +301,20 @@ export async function patchUserById(req, res, next) {
     if (patch.perms !== undefined) patch.perms = toStringArray(patch.perms);
     if (patch.active !== undefined) patch.active = normBool(patch.active);
     if (patch.externalId !== undefined) {
-      patch.externalId = patch.externalId ? String(patch.externalId).trim() : null;
+      patch.externalId = patch.externalId
+        ? String(patch.externalId).trim()
+        : null;
     }
 
     const before = await IamUser.findById(id).lean();
-    const item = await IamUser.findByIdAndUpdate(id, { $set: patch }, { new: true }).lean();
+    const item = await IamUser.findByIdAndUpdate(
+      id,
+      { $set: patch },
+      { new: true },
+    ).lean();
 
-    if (!item) return res.status(404).json({ ok: false, error: "No encontrado" });
+    if (!item)
+      return res.status(404).json({ ok: false, error: "No encontrado" });
 
     await writeAudit(req, {
       action: "update",
@@ -269,9 +346,14 @@ export async function enableUserById(req, res, next) {
   try {
     const { id } = req.params;
     const before = await IamUser.findById(id).lean();
-    const item = await IamUser.findByIdAndUpdate(id, { $set: { active: true } }, { new: true }).lean();
+    const item = await IamUser.findByIdAndUpdate(
+      id,
+      { $set: { active: true } },
+      { new: true },
+    ).lean();
 
-    if (!item) return res.status(404).json({ ok: false, error: "No encontrado" });
+    if (!item)
+      return res.status(404).json({ ok: false, error: "No encontrado" });
 
     await writeAudit(req, {
       action: "activate",
@@ -291,9 +373,14 @@ export async function disableUserById(req, res, next) {
   try {
     const { id } = req.params;
     const before = await IamUser.findById(id).lean();
-    const item = await IamUser.findByIdAndUpdate(id, { $set: { active: false } }, { new: true }).lean();
+    const item = await IamUser.findByIdAndUpdate(
+      id,
+      { $set: { active: false } },
+      { new: true },
+    ).lean();
 
-    if (!item) return res.status(404).json({ ok: false, error: "No encontrado" });
+    if (!item)
+      return res.status(404).json({ ok: false, error: "No encontrado" });
 
     await writeAudit(req, {
       action: "deactivate",
@@ -313,10 +400,12 @@ export async function updateUserPassword(req, res, next) {
   try {
     const { id } = req.params;
     const pwd = String(req.body?.password || "").trim();
-    if (!pwd) return res.status(400).json({ ok: false, error: "password requerido" });
+    if (!pwd)
+      return res.status(400).json({ ok: false, error: "password requerido" });
 
     const before = await IamUser.findById(id).select("+passwordHash").lean();
-    if (!before) return res.status(404).json({ ok: false, error: "No encontrado" });
+    if (!before)
+      return res.status(404).json({ ok: false, error: "No encontrado" });
 
     const now = new Date();
     const passwordHash = await hashPassword(pwd);
@@ -331,7 +420,7 @@ export async function updateUserPassword(req, res, next) {
           mustChangePassword: true,
         },
       },
-      { new: true }
+      { new: true },
     )
       .select("+passwordHash")
       .lean();
@@ -354,7 +443,8 @@ export async function deleteUserById(req, res, next) {
   try {
     const { id } = req.params;
     const before = await IamUser.findById(id).lean();
-    if (!before) return res.status(404).json({ ok: false, error: "No encontrado" });
+    if (!before)
+      return res.status(404).json({ ok: false, error: "No encontrado" });
 
     await IamUser.findByIdAndDelete(id);
 
