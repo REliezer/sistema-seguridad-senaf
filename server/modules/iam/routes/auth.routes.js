@@ -1,5 +1,6 @@
 import { Router } from "express";
 import {
+  checkEmail,
   getSessionMe,
   logout,
   changePassword,
@@ -10,6 +11,7 @@ import {
 
 const iamUserRoutes = Router();
 
+iamUserRoutes.post("/check-email", checkEmail);
 iamUserRoutes.get("/session/me", getSessionMe);
 iamUserRoutes.post("/logout", logout);
 iamUserRoutes.post("/change-password", changePassword);

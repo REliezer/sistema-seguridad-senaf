@@ -1,7 +1,10 @@
 import React from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { Eye, EyeOff, Check, X } from "lucide-react";
 import { useAuthService } from "../../hooks/useAuthService";
+import { validatePasswordPolicy } from "../../utils/passwordValidation.js";
+import { checkEmail } from "../../services/authService.js";
 import {
   formatMmSs,
   parseCodeState,
@@ -26,6 +29,9 @@ export default function LoginPage({ forceChange = false }) {
   const [needChange, setNeedChange] = React.useState(!!forceChange);
   const [msg, setMsg] = React.useState("");
   const [loading, setLoading] = React.useState(false);
+  const [showPassword, setShowPassword] = React.useState(false);
+  const [showNewPassword, setShowNewPassword] = React.useState(false);
+  const [showConfirm, setShowConfirm] = React.useState(false);
 
   const [codeModalOpen, setCodeModalOpen] = React.useState(false);
   const [verificationCode, setVerificationCode] = React.useState("");
@@ -138,8 +144,31 @@ export default function LoginPage({ forceChange = false }) {
   async function doLogin(e) {
     e?.preventDefault();
     setMsg("");
+
+    // Validar que el correo no esté vacío
+    if (!email) {
+      toast.warning("Ingresa tu correo para continuar.");
+      return;
+    }
+
+    // Validar que la contraseña no esté vacía
+    if (!password) {
+      toast.warning("Ingresa tu contraseña para continuar.");
+      return;
+    }
+
     setLoading(true);
     try {
+      // Primero validar que el correo existe en el servidor
+      const emailValidation = await checkEmail(email);
+      if (!emailValidation.ok) {
+        setMsg("Correo no registrado en el sistema.");
+        toast.error("Correo no registrado en el sistema.");
+        setLoading(false);
+        return;
+      }
+
+      // Si el correo existe, intentar login
       const res = await svcLogin(email, password);
 
       if (!res?.ok) {
@@ -181,7 +210,18 @@ export default function LoginPage({ forceChange = false }) {
       return;
     }
 
-    if (!newPassword || newPassword !== confirm) {
+    if (!newPassword) {
+      toast.warning("Debes ingresar una nueva contraseña.");
+      return;
+    }
+
+    const passwordValidation = validatePasswordPolicy(newPassword);
+    if (!passwordValidation.isValid) {
+      toast.error("La contraseña no cumple los requisitos mínimos.");
+      return;
+    }
+
+    if (newPassword !== confirm) {
       toast.warning("La nueva contraseña y la confirmación deben coincidir.");
       return;
     }
@@ -195,7 +235,24 @@ export default function LoginPage({ forceChange = false }) {
       };
 
       const res = await svcChangePassword(payload);
-      if (!res?.ok) {
+      if (res?.ok) {
+        // Contraseña cambiada exitosamente
+        // Limpiar todos los estados para volver al form de login
+        setNeedChange(false);
+        setPassword("");
+        setNewPassword("");
+        setConfirm("");
+        setMsg("");
+        setCodeVerified(false);
+        setVerificationCode("");
+        setCodeMsg("");
+        setExpiresAt(null);
+        setLockedUntil(null);
+        setAttemptsRemaining(3);
+        setCodeModalOpen(false);
+        setShowPassword(false);
+        setShowNewPassword(false);
+        setShowConfirm(false);
         return;
       }
     } catch (err) {
@@ -248,13 +305,23 @@ export default function LoginPage({ forceChange = false }) {
                 <label className="block text-sm text-cyan-100/90">
                   Contraseña
                 </label>
-                <input
-                  type="password"
-                  className="w-full rounded border text-cyan-100/90 border-cyan-500/40 bg-black/30 p-2"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                />
+                <div className="relative">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    className="w-full rounded border text-cyan-100/90 border-cyan-500/40 bg-black/30 p-2 pr-10"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-cyan-300 hover:text-cyan-200"
+                    title={showPassword ? "Ocultar" : "Mostrar"}
+                  >
+                    {showPassword ? <Eye size={20} /> : <EyeOff size={20} />}
+                  </button>
+                </div>
               </>
             )}
 
@@ -263,13 +330,23 @@ export default function LoginPage({ forceChange = false }) {
                 <label className="block text-sm text-cyan-100/90">
                   Contraseña actual
                 </label>
-                <input
-                  type="password"
-                  className="w-full rounded border text-cyan-100/90 border-cyan-500/40 bg-black/30 p-2"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                />
+                <div className="relative">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    className="w-full rounded border text-cyan-100/90 border-cyan-500/40 bg-black/30 p-2 pr-10"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-cyan-300 hover:text-cyan-200"
+                    title={showPassword ? "Ocultar" : "Mostrar"}
+                  >
+                    {showPassword ? <Eye size={20} /> : <EyeOff size={20} />}
+                  </button>
+                </div>
               </>
             )}
 
@@ -307,23 +384,82 @@ export default function LoginPage({ forceChange = false }) {
                 <label className="block text-sm text-cyan-100/90">
                   Nueva contraseña
                 </label>
-                <input
-                  type="password"
-                  className="w-full rounded border text-cyan-100/90 border-cyan-500/40 bg-black/30 p-2"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  required
-                />
+                <div className="relative">
+                  <input
+                    type={showNewPassword ? "text" : "password"}
+                    className="w-full rounded border text-cyan-100/90 border-cyan-500/40 bg-black/30 p-2 pr-10"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewPassword(!showNewPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-cyan-300 hover:text-cyan-200"
+                    title={showNewPassword ? "Ocultar" : "Mostrar"}
+                  >
+                    {showNewPassword ? <Eye size={20} /> : <EyeOff size={20} />}
+                  </button>
+                </div>
+
+                {newPassword && (
+                  <div className="rounded border border-cyan-500/20 bg-black/25 p-3 text-xs space-y-1">
+                    <p className="text-cyan-100/80 font-semibold mb-2">Requisitos de contraseña:</p>
+                    {(() => {
+                      const validation = validatePasswordPolicy(newPassword);
+                      return (
+                        <>
+                          <p className={`flex items-center gap-2 ${validation.minLength.ok ? "text-green-400" : "text-red-400"}`}>
+                            {validation.minLength.ok ? <Check size={16} /> : <X size={16} />} {validation.minLength.label}
+                          </p>
+                          <p className={`flex items-center gap-2 ${validation.hasUppercase.ok ? "text-green-400" : "text-red-400"}`}>
+                            {validation.hasUppercase.ok ? <Check size={16} /> : <X size={16} />} {validation.hasUppercase.label}
+                          </p>
+                          <p className={`flex items-center gap-2 ${validation.hasLowercase.ok ? "text-green-400" : "text-red-400"}`}>
+                            {validation.hasLowercase.ok ? <Check size={16} /> : <X size={16} />} {validation.hasLowercase.label}
+                          </p>
+                          <p className={`flex items-center gap-2 ${validation.hasNumber.ok ? "text-green-400" : "text-red-400"}`}>
+                            {validation.hasNumber.ok ? <Check size={16} /> : <X size={16} />} {validation.hasNumber.label}
+                          </p>
+                          <p className={`flex items-center gap-2 ${validation.hasSymbol.ok ? "text-green-400" : "text-red-400"}`}>
+                            {validation.hasSymbol.ok ? <Check size={16} /> : <X size={16} />} {validation.hasSymbol.label}
+                          </p>
+                        </>
+                      );
+                    })()}
+                  </div>
+                )}
+
                 <label className="block text-sm text-cyan-100/90">
                   Confirmar contraseña
                 </label>
-                <input
-                  type="password"
-                  className="w-full rounded border text-cyan-100/90 border-cyan-500/40 bg-black/30 p-2"
-                  value={confirm}
-                  onChange={(e) => setConfirm(e.target.value)}
-                  required
-                />
+                <div className="relative">
+                  <input
+                    type={showConfirm ? "text" : "password"}
+                    className="w-full rounded border text-cyan-100/90 border-cyan-500/40 bg-black/30 p-2 pr-10"
+                    value={confirm}
+                    onChange={(e) => setConfirm(e.target.value)}
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirm(!showConfirm)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-cyan-300 hover:text-cyan-200"
+                    title={showConfirm ? "Ocultar" : "Mostrar"}
+                  >
+                    {showConfirm ? <Eye size={20} /> : <EyeOff size={20} />}
+                  </button>
+                </div>
+
+                {newPassword && confirm && (
+                  <div className="text-xs">
+                    {newPassword === confirm ? (
+                      <p className="text-green-400 flex items-center gap-2"><Check size={16} /> Las contraseñas coinciden</p>
+                    ) : (
+                      <p className="text-red-400 flex items-center gap-2"><X size={16} /> Las contraseñas no coinciden</p>
+                    )}
+                  </div>
+                )}
               </>
             )}
 

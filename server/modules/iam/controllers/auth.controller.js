@@ -19,6 +19,38 @@ import {
 } from "../utils/auth.helpers.js";
 
 /**
+ * Controlador para verificar si un correo existe en el sistema. Usado antes de hacer login para validar el correo.
+ * @route POST /iam/auth/check-email
+ * @body {string} email
+ * @returns {object} { ok: true } si existe, { ok: false, error } si no existe
+ */
+export const checkEmail = async (req, res, next) => {
+  try {
+    const email = String(req.body?.email || "")
+      .trim()
+      .toLowerCase();
+
+    if (!email) {
+      return res
+        .status(400)
+        .json({ ok: false, error: "Email requerido" });
+    }
+
+    const user = await IamUser.findOne({ email }).select("email active").lean();
+
+    if (!user || !user.active) {
+      return res
+        .status(404)
+        .json({ ok: false, error: "Usuario no encontrado" });
+    }
+
+    res.json({ ok: true });
+  } catch (e) {
+    next(e);
+  }
+};
+
+/**
  * Controlador para login local con email y password. Verifica credenciales, estado del usuario, expiración de contraseña y devuelve un JWT si es válido. Si es el primer login o la contraseña expiró, devuelve un error indicando que se requiere cambio de contraseña.
  * @route POST /iam/auth/login
  * @body {string} email

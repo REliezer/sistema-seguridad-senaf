@@ -1,5 +1,15 @@
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "/api";
 
+export async function checkEmail(email) {
+  const r = await fetch(`${API_BASE}/iam/v1/auth/check-email`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email }),
+  });
+  const data = await r.json().catch(() => ({}));
+  return { ok: r.ok, status: r.status, data, error: data?.error };
+}
+
 export async function requestPasswordCode(email) {
   const r = await fetch(`${API_BASE}/iam/v1/auth/password-code/request`, {
     method: "POST",
