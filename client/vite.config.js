@@ -26,5 +26,8 @@ export default defineConfig({
       },
        
     },
+    define: {
+      'import.meta.env.VITE_APP_VERSION': JSON.stringify(packageJson.version),
+    }
   },
 });
