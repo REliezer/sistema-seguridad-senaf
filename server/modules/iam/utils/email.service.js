@@ -1,10 +1,11 @@
 /**
- * Servicio de envío de emails usando SendGrid
+ * Servicio de envío de emails usando SendGrid API HTTP
  * Compatible con producción en cualquier hosting (Vercel, Railway, etc)
+ * Usa API REST (port 443) en lugar de SMTP para evitar bloqueos
  * 100 emails/día gratis, sin restricciones de destinatarios
  */
 
-import nodemailer from "nodemailer";
+import nodemailer from "nodemailer"; // Solo para Gmail local, SendGrid usa API HTTP
 
 // En producción SIEMPRE usar SendGrid (Gmail SMTP no funciona en serverless)
 // En desarrollo usar SendGrid si está configurado, sino Gmail
@@ -24,56 +25,75 @@ console.log("[EMAIL-INIT] SENDGRID_FROM_EMAIL:", process.env.SENDGRID_FROM_EMAIL
 console.log("[EMAIL-INIT] USE_SENDGRID env var:", process.env.USE_SENDGRID);
 console.log("[EMAIL-INIT] FORCE_SENDGRID:", FORCE_SENDGRID);
 console.log("[EMAIL-INIT] USE_SENDGRID (final):", USE_SENDGRID);
-console.log("[EMAIL-INIT] Using method:", USE_SENDGRID ? "SendGrid" : "Gmail SMTP");
+console.log("[EMAIL-INIT] Using method:", USE_SENDGRID ? "SendGrid API (HTTP)" : "Gmail SMTP");
 console.log("[EMAIL-INIT] ========================================");
 
 /**
- * Envía correo usando SendGrid API (cloud-friendly, sin restricciones)
+ * Envía correo usando SendGrid API HTTP (no SMTP)
+ * Funciona en serverless porque usa port 443 (HTTPS) que nunca está bloqueado
  */
-async function sendWithSendGrid({ to, subject, html }) {
-  console.log("[SENDGRID] Starting sendWithSendGrid");
+async function sendWithSendGridAPI({ to, subject, html }) {
+  console.log("[SENDGRID-API] Starting sendWithSendGridAPI");
   
   if (!process.env.SENDGRID_API_KEY) {
-    console.error("[SENDGRID] ❌ SENDGRID_API_KEY not configured");
+    console.error("[SENDGRID-API] ❌ SENDGRID_API_KEY not configured");
     throw new Error("SENDGRID_API_KEY no configurado");
   }
 
   const fromEmail = process.env.SENDGRID_FROM_EMAIL || "sistema@senaf.gob.hn";
-  console.log("[SENDGRID] From email:", fromEmail);
-  console.log("[SENDGRID] To email:", to);
+  console.log("[SENDGRID-API] From email:", fromEmail);
+  console.log("[SENDGRID-API] To email:", to);
 
   try {
-    // SendGrid usa SMTP también, pero con sus credenciales
-    console.log("[SENDGRID] Creating transporter for smtp.sendgrid.net:587");
-    const transporter = nodemailer.createTransport({
-      host: "smtp.sendgrid.net",
-      port: 587,
-      secure: false,
-      auth: {
-        user: "apikey", // SendGrid siempre usa 'apikey' como usuario
-        pass: process.env.SENDGRID_API_KEY,
+    console.log("[SENDGRID-API] Calling SendGrid API at https://api.sendgrid.com/v3/mail/send");
+    
+    const response = await fetch("https://api.sendgrid.com/v3/mail/send", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${process.env.SENDGRID_API_KEY}`,
+        "Content-Type": "application/json",
       },
-      connectionTimeout: 30000,
-      greetingTimeout: 30000,
-      socketTimeout: 30000,
+      body: JSON.stringify({
+        personalizations: [
+          {
+            to: [{ email: to }],
+            subject: subject,
+          },
+        ],
+        from: {
+          email: fromEmail,
+          name: "SENAF Sistema",
+        },
+        content: [
+          {
+            type: "text/html",
+            value: html,
+          },
+        ],
+      }),
     });
 
-    console.log("[SENDGRID] Transporter created, sending mail...");
-    const info = await transporter.sendMail({
-      from: `"SENAF Sistema" <${fromEmail}>`,
-      to,
-      subject,
-      html,
-    });
+    console.log("[SENDGRID-API] Response status:", response.status);
 
-    console.log("[SENDGRID] ✅ Message sent successfully");
-    console.log("[SENDGRID] MessageId:", info.messageId);
-    return { success: true, messageId: info.messageId };
+    if (!response.ok) {
+      const errorBody = await response.text();
+      console.error("[SENDGRID-API] ❌ HTTP Error:", response.status);
+      console.error("[SENDGRID-API] Error body:", errorBody);
+      throw new Error(`SendGrid API returned ${response.status}: ${errorBody}`);
+    }
+
+    const responseData = await response.json();
+    console.log("[SENDGRID-API] ✅ Email sent successfully");
+    
+    // SendGrid API devuelve 202 con un header X-Message-Id
+    const messageId = response.headers.get("X-Message-Id") || "generated-by-sendgrid-api";
+    console.log("[SENDGRID-API] MessageId:", messageId);
+    
+    return { success: true, messageId };
   } catch (error) {
-    console.error("[SENDGRID] ❌ SendGrid error:", {
+    console.error("[SENDGRID-API] ❌ SendGrid API error:", {
       message: error.message,
-      code: error.code,
-      responseCode: error.responseCode,
+      stack: error.stack,
     });
     throw error;
   }
@@ -154,10 +174,10 @@ export async function sendEmail({ to, subject, html }) {
 
     let result;
     if (USE_SENDGRID) {
-      console.log("[EMAIL] Calling sendWithSendGrid...");
-      result = await sendWithSendGrid({ to, subject, html });
+      console.log("[EMAIL] Calling sendWithSendGridAPI (HTTP REST)...");
+      result = await sendWithSendGridAPI({ to, subject, html });
     } else {
-      console.log("[EMAIL] Calling sendWithGmail...");
+      console.log("[EMAIL] Calling sendWithGmail (SMTP)...");
       result = await sendWithGmail({ to, subject, html });
     }
 
