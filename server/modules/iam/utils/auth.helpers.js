@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import nodemailer from "nodemailer";
 import { getParameterCached } from "./system.helpers.js";
+import { sendEmail } from "./email.service.js";
 
 export const CODE_TTL_MS = 10 * 60 * 1000;
 export const CODE_MAX_ATTEMPTS = 3;
@@ -28,20 +28,7 @@ export function hashCode(code) {
 }
 
 export async function sendPasswordCode({ email, code }) {
-  console.log({ email, code });
-
-  if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) {
-    console.error("Faltan credenciales de Gmail");
-return { success: false, error: "Faltan credenciales de Gmail" };
-  }
-
-  const transporter = nodemailer.createTransport({
-      service: "gmail",
-      auth: {
-      user: process.env.GMAIL_USER,
-      pass: process.env.GMAIL_APP_PASSWORD,
-    },
-  });
+  console.log("[PASSWORD-CODE] Sending password reset code to:", email);
 
   const safeCode = String(code).replace(/[^0-9]/g, "");
 
@@ -79,19 +66,23 @@ return { success: false, error: "Faltan credenciales de Gmail" };
       </table>
     </div>
   `;
+
   try {
-    const info = await transporter.sendMail({
-      from: `"SENAF Sistema" <${process.env.GMAIL_USER}>`,
+    const result = await sendEmail({
       to: email,
       subject: "Código de verificación SENAF",
       html: htmlContent,
-      text: `Tu código de verificación es: ${safeCode}`,
     });
 
-    return { success: true, messageId: info.messageId };
-
+    if (result.success) {
+      console.log("[PASSWORD-CODE] ✅ Password reset code sent successfully");
+      return { success: true, messageId: result.messageId };
+    } else {
+      console.error("[PASSWORD-CODE] ❌ Failed to send code:", result.error);
+      return { success: false, error: result.error };
+    }
   } catch (error) {
-    console.error(error);
+    console.error("[PASSWORD-CODE] ❌ Error sending password code:", error.message);
     return { success: false, error: error.message };
   }
 }

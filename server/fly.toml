@@ -1,0 +1,29 @@
+app = "senaf-backend"
+primary_region = "sjc"
+
+[build]
+  builder = "heroku"
+
+[env]
+  NODE_ENV = "production"
+
+# Una sola instancia para CRON y Socket.io
+[processes]
+  app = "node src/server.js"
+
+[[services]]
+  protocol = "tcp"
+  internal_port = 4000
+  processes = ["app"]
+
+  [[services.ports]]
+    port = 80
+    handlers = ["http"]
+
+  [[services.ports]]
+    port = 443
+    handlers = ["tls", "http"]
+
+# Configuración de instancias: 1 sola
+[deploy]
+  release_command = "npm run seed"

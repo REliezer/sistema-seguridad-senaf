@@ -82,11 +82,9 @@ async function sendWithSendGridAPI({ to, subject, html }) {
       throw new Error(`SendGrid API returned ${response.status}: ${errorBody}`);
     }
 
-    const responseData = await response.json();
-    console.log("[SENDGRID-API] ✅ Email sent successfully");
-    
-    // SendGrid API devuelve 202 con un header X-Message-Id
+    // SendGrid API devuelve 202 sin body, solo con header X-Message-Id
     const messageId = response.headers.get("X-Message-Id") || "generated-by-sendgrid-api";
+    console.log("[SENDGRID-API] ✅ Email sent successfully");
     console.log("[SENDGRID-API] MessageId:", messageId);
     
     return { success: true, messageId };

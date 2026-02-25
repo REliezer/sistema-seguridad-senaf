@@ -1,4 +1,3 @@
-import nodemailer from "nodemailer";
 import { sendEmail, buildUserRegistrationHTML } from "./email.service.js";
 
 export function addDays(date, days) {
