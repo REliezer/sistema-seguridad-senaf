@@ -363,6 +363,10 @@ export const iamApi = {
   /* ---------- USUARIOS ---------- */
   listUsers: (q = "", t) => rawFetch(PATHS.users.list(q), { token: t }),
 
+  getUser: (id, t) => rawFetch(PATHS.users.byId(id), { token: t }),
+
+  getUserById: (id, t) => rawFetch(PATHS.users.byId(id), { token: t }),
+
   listGuards: (q = "", active = true, t) =>
     rawFetch(PATHS.users.guards(q, active), { token: t }),
 

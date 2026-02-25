@@ -407,6 +407,9 @@ export async function updateUserPassword(req, res, next) {
     if (!before)
       return res.status(404).json({ ok: false, error: "No encontrado" });
 
+    // Obtener días de expiración de contraseña desde parámetros
+    const passwordExpiryDays = await getParameterCached("password_expiry_days", 60);
+
     const now = new Date();
     const passwordHash = await hashPassword(pwd);
     const item = await IamUser.findByIdAndUpdate(
@@ -416,7 +419,7 @@ export async function updateUserPassword(req, res, next) {
           passwordHash,
           provider: "local",
           passwordChangedAt: now,
-          passwordExpiresAt: addDays(now, 60),
+          passwordExpiresAt: addDays(now, passwordExpiryDays),
           mustChangePassword: true,
         },
       },

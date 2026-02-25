@@ -1,3 +1,4 @@
+import { maritalStatuses as ESTADOS_CIVILES } from "../data/maritalStatuses.js";
 
 /* ===================== Helpers básicos ===================== */
 

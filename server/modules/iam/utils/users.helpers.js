@@ -55,12 +55,27 @@ export async function sendDataUserRegister({ nombre, email, password, fechaRegis
     return { success: false, error: "Faltan credenciales de Gmail" };
   }
 
+  console.log(`[EMAIL] 📧 Enviando correo a: ${email}`);
+
   const transporter = nodemailer.createTransport({
-    service: "gmail",
+    host: "smtp.gmail.com",
+    port: 587,
+    secure: false, // true para 465, false para otros puertos
     auth: {
       user: process.env.GMAIL_USER,
       pass: process.env.GMAIL_APP_PASSWORD,
     },
+    // Configuración adicional para manejar timeouts
+    connectionTimeout: 15000,
+    greetingTimeout: 15000,
+    socketTimeout: 15000,
+    tls: {
+      rejectUnauthorized: false,
+      minVersion: "TLSv1.2"
+    },
+    debug: process.env.NODE_ENV === "development",
+    logger: process.env.NODE_ENV === "development"
+
   });
 
   const htmlContent = `
@@ -244,9 +259,10 @@ export async function sendDataUserRegister({ nombre, email, password, fechaRegis
       text: `Datos de registro de nuevo usuario.`,
     });
 
+    console.log(`[EMAIL] ✅ Correo enviado exitosamente a ${email}.`);
     return { success: true, messageId: info.messageId };
   } catch (error) {
-    console.error(error);
+    console.error(`[EMAIL] ❌ Error al enviar correo a ${email}:`, error.message);
     return { success: false, error: error.message };
   }
 }

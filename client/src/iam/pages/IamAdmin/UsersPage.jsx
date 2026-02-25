@@ -365,9 +365,11 @@ export default function UsersPage() {
     }
 
     try {
+      const mapped = mapUserToFormSafe(full);
+      
       setForm((prev) => ({
         ...prev,
-        ...mapUserToFormSafe(full),
+        ...mapped,
       }));
     } catch {
       setForm((prev) => ({
