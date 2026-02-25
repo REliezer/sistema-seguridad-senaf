@@ -6,94 +6,177 @@
 
 import nodemailer from "nodemailer";
 
-const USE_SENDGRID = process.env.USE_SENDGRID === "1" || process.env.SENDGRID_API_KEY;
+// En producción SIEMPRE usar SendGrid (Gmail SMTP no funciona en serverless)
+// En desarrollo usar SendGrid si está configurado, sino Gmail
+const IS_PRODUCTION = process.env.NODE_ENV === "production";
+const HAS_SENDGRID_KEY = !!process.env.SENDGRID_API_KEY;
+const FORCE_SENDGRID = process.env.USE_SENDGRID === "1" || IS_PRODUCTION;
+const USE_SENDGRID = HAS_SENDGRID_KEY && (FORCE_SENDGRID || HAS_SENDGRID_KEY);
+
+// Logs de inicialización
+console.log("[EMAIL-INIT] ========================================");
+console.log("[EMAIL-INIT] Email Service Initialization");
+console.log("[EMAIL-INIT] NODE_ENV:", process.env.NODE_ENV);
+console.log("[EMAIL-INIT] IS_PRODUCTION:", IS_PRODUCTION);
+console.log("[EMAIL-INIT] SENDGRID_API_KEY configured:", HAS_SENDGRID_KEY);
+console.log("[EMAIL-INIT] SENDGRID_API_KEY (first 10 chars):", process.env.SENDGRID_API_KEY ? process.env.SENDGRID_API_KEY.substring(0, 10) + "..." : "NOT SET");
+console.log("[EMAIL-INIT] SENDGRID_FROM_EMAIL:", process.env.SENDGRID_FROM_EMAIL || "NOT SET");
+console.log("[EMAIL-INIT] USE_SENDGRID env var:", process.env.USE_SENDGRID);
+console.log("[EMAIL-INIT] FORCE_SENDGRID:", FORCE_SENDGRID);
+console.log("[EMAIL-INIT] USE_SENDGRID (final):", USE_SENDGRID);
+console.log("[EMAIL-INIT] Using method:", USE_SENDGRID ? "SendGrid" : "Gmail SMTP");
+console.log("[EMAIL-INIT] ========================================");
 
 /**
  * Envía correo usando SendGrid API (cloud-friendly, sin restricciones)
  */
 async function sendWithSendGrid({ to, subject, html }) {
+  console.log("[SENDGRID] Starting sendWithSendGrid");
+  
   if (!process.env.SENDGRID_API_KEY) {
+    console.error("[SENDGRID] ❌ SENDGRID_API_KEY not configured");
     throw new Error("SENDGRID_API_KEY no configurado");
   }
 
   const fromEmail = process.env.SENDGRID_FROM_EMAIL || "sistema@senaf.gob.hn";
+  console.log("[SENDGRID] From email:", fromEmail);
+  console.log("[SENDGRID] To email:", to);
 
-  // SendGrid usa SMTP también, pero con sus credenciales
-  const transporter = nodemailer.createTransport({
-    host: "smtp.sendgrid.net",
-    port: 587,
-    secure: false,
-    auth: {
-      user: "apikey", // SendGrid siempre usa 'apikey' como usuario
-      pass: process.env.SENDGRID_API_KEY,
-    },
-  });
+  try {
+    // SendGrid usa SMTP también, pero con sus credenciales
+    console.log("[SENDGRID] Creating transporter for smtp.sendgrid.net:587");
+    const transporter = nodemailer.createTransport({
+      host: "smtp.sendgrid.net",
+      port: 587,
+      secure: false,
+      auth: {
+        user: "apikey", // SendGrid siempre usa 'apikey' como usuario
+        pass: process.env.SENDGRID_API_KEY,
+      },
+      connectionTimeout: 30000,
+      greetingTimeout: 30000,
+      socketTimeout: 30000,
+    });
 
-  const info = await transporter.sendMail({
-    from: `"SENAF Sistema" <${fromEmail}>`,
-    to,
-    subject,
-    html,
-  });
+    console.log("[SENDGRID] Transporter created, sending mail...");
+    const info = await transporter.sendMail({
+      from: `"SENAF Sistema" <${fromEmail}>`,
+      to,
+      subject,
+      html,
+    });
 
-  return { success: true, messageId: info.messageId };
+    console.log("[SENDGRID] ✅ Message sent successfully");
+    console.log("[SENDGRID] MessageId:", info.messageId);
+    return { success: true, messageId: info.messageId };
+  } catch (error) {
+    console.error("[SENDGRID] ❌ SendGrid error:", {
+      message: error.message,
+      code: error.code,
+      responseCode: error.responseCode,
+    });
+    throw error;
+  }
 }
 
 /**
  * Envía correo usando SMTP/Gmail (solo funciona en local/VPS)
  */
 async function sendWithGmail({ to, subject, html }) {
+  console.log("[GMAIL] Starting sendWithGmail");
+  
   if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) {
+    console.error("[GMAIL] ❌ GMAIL_USER or GMAIL_APP_PASSWORD not configured");
     throw new Error("GMAIL_USER o GMAIL_APP_PASSWORD no configurados");
   }
 
-  const transporter = nodemailer.createTransport({
-    host: "smtp.gmail.com",
-    port: 587,
-    secure: false,
-    auth: {
-      user: process.env.GMAIL_USER,
-      pass: process.env.GMAIL_APP_PASSWORD,
-    },
-    connectionTimeout: 15000,
-    greetingTimeout: 15000,
-    socketTimeout: 15000,
-    tls: {
-      rejectUnauthorized: false,
-      minVersion: "TLSv1.2",
-    },
-  });
+  console.log("[GMAIL] GMAIL_USER:", process.env.GMAIL_USER);
 
-  const info = await transporter.sendMail({
-    from: `"SENAF Sistema" <${process.env.GMAIL_USER}>`,
-    to,
-    subject,
-    html,
-  });
+  try {
+    console.log("[GMAIL] Creating transporter for smtp.gmail.com:587");
+    const transporter = nodemailer.createTransport({
+      host: "smtp.gmail.com",
+      port: 587,
+      secure: false,
+      auth: {
+        user: process.env.GMAIL_USER,
+        pass: process.env.GMAIL_APP_PASSWORD,
+      },
+      connectionTimeout: 15000,
+      greetingTimeout: 15000,
+      socketTimeout: 15000,
+      tls: {
+        rejectUnauthorized: false,
+        minVersion: "TLSv1.2",
+      },
+    });
 
-  return { success: true, messageId: info.messageId };
+    console.log("[GMAIL] Transporter created, sending mail...");
+    const info = await transporter.sendMail({
+      from: `"SENAF Sistema" <${process.env.GMAIL_USER}>`,
+      to,
+      subject,
+      html,
+    });
+
+    console.log("[GMAIL] ✅ Message sent successfully");
+    console.log("[GMAIL] MessageId:", info.messageId);
+    return { success: true, messageId: info.messageId };
+  } catch (error) {
+    console.error("[GMAIL] ❌ Gmail SMTP error:", {
+      message: error.message,
+      code: error.code,
+    });
+    throw error;
+  }
 }
-
 /**
  * Envía correo usando el método disponible
  * Prioridad: SendGrid (prod) > Gmail (local)
  */
 export async function sendEmail({ to, subject, html }) {
   try {
+    console.log("[EMAIL] ========================================");
+    console.log("[EMAIL] sendEmail called");
+    console.log("[EMAIL] Recipient:", to);
+    console.log("[EMAIL] Subject:", subject);
+    
+    // En producción SIEMPRE requerimos SendGrid
+    if (IS_PRODUCTION && !HAS_SENDGRID_KEY) {
+      const errorMsg = "❌ PRODUCCIÓN: SENDGRID_API_KEY no configurado. Agrega esta variable en tu plataforma de hosting (Vercel/Railway/etc)";
+      console.error("[EMAIL]", errorMsg);
+      throw new Error(errorMsg);
+    }
+
     const method = USE_SENDGRID ? "SendGrid" : "Gmail";
-    console.log(`[EMAIL] 📧 Enviando correo a: ${to} (método: ${method})`);
+    console.log(`[EMAIL] 📧 Using transport: ${method}`);
+    console.log(`[EMAIL] 📧 Sending email to: ${to}`);
 
     let result;
     if (USE_SENDGRID) {
+      console.log("[EMAIL] Calling sendWithSendGrid...");
       result = await sendWithSendGrid({ to, subject, html });
     } else {
+      console.log("[EMAIL] Calling sendWithGmail...");
       result = await sendWithGmail({ to, subject, html });
     }
 
-    console.log(`[EMAIL] ✅ Correo enviado exitosamente. MessageId: ${result.messageId}`);
+    console.log(`[EMAIL] ✅ Email sent successfully. MessageId: ${result.messageId}`);
+    console.log("[EMAIL] ========================================");
     return result;
   } catch (error) {
-    console.error(`[EMAIL] ❌ Error al enviar correo:`, error.message);
+    console.error(`[EMAIL] ❌ Error sending email:`, error.message);
+    console.error(`[EMAIL] Error details:`, {
+      to,
+      subject,
+      method: USE_SENDGRID ? "SendGrid" : "Gmail",
+      NODE_ENV: process.env.NODE_ENV,
+      USE_SENDGRID,
+      HAS_SENDGRID_KEY,
+      errorCode: error.code,
+      errorResponse: error.response?.text || error.response,
+    });
+    console.log("[EMAIL] ========================================");
     return { success: false, error: error.message };
   }
 }
